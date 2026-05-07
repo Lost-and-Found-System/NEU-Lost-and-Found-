@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -20,36 +20,153 @@ import introJs from 'intro.js';
 import 'intro.js/introjs.css';
 import { supabase, signInWithGoogle, logout, getCurrentUser } from './lib/supabase';
 
-function App() {
+// ── Operation type for structured error logging ─────────────────────
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST   = 'list',
+  GET    = 'get',
+  WRITE  = 'write',
+}
+
+interface SupabaseErrorInfo {
+  error:         string;
+  operationType: OperationType;
+  path:          string | null;
+  authInfo:      { userId?: string; email?: string | null; }
+}
+
+function handleSupabaseError(
+  error: any,
+  operationType: OperationType,
+  path: string | null
+) {
+  const errInfo: SupabaseErrorInfo = {
+    error: error?.message || String(error),
+    authInfo: { userId: undefined, email: undefined },
+    operationType,
+    path
+  };
+  console.error('Supabase Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// ── Core knowledge record ─────────────────────────────────────────
+interface Item {
+  id:           string;
+  type:         'lost' | 'found';
+  title:        string;
+  description:  string;
+  category:     string;          // maps to 6-category KM taxonomy
+  location:     string;          // geographic knowledge tag
+  date:         any;             // temporal knowledge tag
+  image_urls:   string[];        // visual knowledge (up to 5)
+  author_uid:   string;
+  author_name:  string;
+  author_photo?: string;
+  status:       'active' | 'resolved' | 'archived';
+  created_at:   any;
+  contact_info: string;
+  is_anonymous: boolean;
+}
+
+interface ItemComment {
+  id:          string;
+  item_id:     string;
+  author_uid:  string;
+  author_name: string;
+  author_photo?: string;
+  content:     string;
+  created_at:  string;
+  parent_id?:  string;   // enables threaded replies
+}
+
+interface AppNotification {
+  id:        string;
+  type:      'post' | 'comment';
+  message:   string;
+  timestamp: string;
+  read:      boolean;
+  itemId?:   string;
+}
+
+// ── Error Boundary — catches runtime errors and shows recovery UI ──
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      let errorMessage = this.state.error?.message || 'Something went wrong.';
+      // Detect Supabase config error specifically
+      const isConfigError = errorMessage.includes('Supabase URL or Anon Key is missing');
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+          <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xl">
+            <h2 className="text-2xl font-bold text-slate-900">
+              {isConfigError ? 'Configuration Required' : 'Oops!'}
+            </h2>
+            <p className="text-slate-600 mt-2">{errorMessage}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-4 w-full py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Main App Component
+function AppContent() {
   const [count, setCount] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check NEU domain restriction - FIXED: handle undefined email
+  // Check NEU domain restriction
   const isNEUEmail = (email: string | undefined | null): boolean => {
     if (!email) return false;
     return email.endsWith('@neu.edu.ph');
   };
 
-  // Sync user state - FIXED: handle undefined email
+  // Sync user state
   const syncUser = async () => {
-    const currentUser = await getCurrentUser();
-    const userEmail = currentUser?.email;
-    
-    if (currentUser && !isNEUEmail(userEmail)) {
-      toast.error('Access Restricted', {
-        description: 'Only @neu.edu.ph email addresses are allowed.',
-        duration: 5000,
-      });
-      await logout();
-      setUser(null);
-    } else {
-      setUser(currentUser);
+    try {
+      const currentUser = await getCurrentUser();
+      const userEmail = currentUser?.email;
+      
+      if (currentUser && !isNEUEmail(userEmail)) {
+        toast.error('Access Restricted', {
+          description: 'Only @neu.edu.ph email addresses are allowed.',
+          duration: 5000,
+        });
+        await logout();
+        setUser(null);
+      } else {
+        setUser(currentUser);
+      }
+    } catch (error) {
+      handleSupabaseError(error, OperationType.GET, 'syncUser');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Auth state listener - FIXED: handle undefined email
+  // Auth state listener
   useEffect(() => {
     syncUser();
 
@@ -133,14 +250,14 @@ function App() {
       return;
     }
     toast.info('Report Lost Item', {
-      description: 'This feature will be available soon!',
+      description: 'This feature will be available in PR #008!',
       duration: 4000,
     });
   };
 
   const handleBrowseFound = () => {
     toast.info('Browse Found Items', {
-      description: 'Browse and search functionality coming soon!',
+      description: 'Browse and search functionality coming in PR #008!',
       duration: 4000,
     });
   };
@@ -343,7 +460,7 @@ function App() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => toast.success('Feature coming soon!')}
+              onClick={() => toast.success('Feature coming in PR #008!')}
               className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
             >
               <MessageCircle className="w-5 h-5" />
@@ -425,4 +542,11 @@ function App() {
   );
 }
 
-export default App;
+// Wrap AppContent with ErrorBoundary
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
