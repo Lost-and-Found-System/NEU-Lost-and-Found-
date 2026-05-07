@@ -21,7 +21,7 @@ import 'intro.js/introjs.css';
 import { supabase, signInWithGoogle, logout, getCurrentUser } from './lib/supabase';
 
 // ── Operation type for structured error logging ─────────────────────
-enum OperationType {
+export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
@@ -30,14 +30,15 @@ enum OperationType {
   WRITE  = 'write',
 }
 
-interface SupabaseErrorInfo {
+export interface SupabaseErrorInfo {
   error:         string;
   operationType: OperationType;
   path:          string | null;
   authInfo:      { userId?: string; email?: string | null; }
 }
 
-function handleSupabaseError(
+// ── Structured Error Handler ─────────────────────────────────────────
+export function handleSupabaseError(
   error: any,
   operationType: OperationType,
   path: string | null
@@ -48,12 +49,25 @@ function handleSupabaseError(
     operationType,
     path
   };
-  console.error('Supabase Error: ', JSON.stringify(errInfo));
+  
+  // Log structured error to console
+  console.error('Supabase Error: ', JSON.stringify(errInfo, null, 2));
+  
+  // You can also send to an error tracking service here
+  // Example: sendToErrorTracking(errInfo);
+  
   throw new Error(JSON.stringify(errInfo));
 }
 
-// ── Core knowledge record ─────────────────────────────────────────
-interface Item {
+// ── Core knowledge record interfaces ─────────────────────────────────
+// These interfaces define the data structure for the entire application.
+// They will be used in upcoming PRs:
+// - PR #008: Lost Item Form (creates Items)
+// - PR #009: Browse & Search (displays Items)
+// - PR #010: Comments System (uses ItemComment)
+// - PR #011: Notifications (uses AppNotification)
+
+export interface Item {
   id:           string;
   type:         'lost' | 'found';
   title:        string;
@@ -71,7 +85,7 @@ interface Item {
   is_anonymous: boolean;
 }
 
-interface ItemComment {
+export interface ItemComment {
   id:          string;
   item_id:     string;
   author_uid:  string;
@@ -82,7 +96,7 @@ interface ItemComment {
   parent_id?:  string;   // enables threaded replies
 }
 
-interface AppNotification {
+export interface AppNotification {
   id:        string;
   type:      'post' | 'comment';
   message:   string;
@@ -91,47 +105,120 @@ interface AppNotification {
   itemId?:   string;
 }
 
+// ── Type Guards for runtime type checking ────────────────────────────
+export function isItem(obj: any): obj is Item {
+  return obj && typeof obj.id === 'string' && typeof obj.title === 'string';
+}
+
+export function isItemComment(obj: any): obj is ItemComment {
+  return obj && typeof obj.id === 'string' && typeof obj.item_id === 'string';
+}
+
+export function isAppNotification(obj: any): obj is AppNotification {
+  return obj && typeof obj.id === 'string' && typeof obj.type === 'string';
+}
+
 // ── Error Boundary — catches runtime errors and shows recovery UI ──
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error: Error | null }
-> {
-  constructor(props: any) {
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
   
-  static getDerivedStateFromError(error: Error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log error to console with details
+    console.error('ErrorBoundary caught an error:', error);
+    console.error('Error Info:', errorInfo);
+    
+    // You can also send to an error tracking service here
+    // Example: sendToErrorTracking({ error, errorInfo });
   }
   
   render() {
     if (this.state.hasError) {
       let errorMessage = this.state.error?.message || 'Something went wrong.';
+      
       // Detect Supabase config error specifically
-      const isConfigError = errorMessage.includes('Supabase URL or Anon Key is missing');
+      const isConfigError = errorMessage.includes('Supabase URL') || 
+                           errorMessage.includes('credentials missing') ||
+                           errorMessage.includes('VITE_SUPABASE');
+      
+      // Try to parse JSON error if it's from handleSupabaseError
+      let parsedError = null;
+      try {
+        parsedError = JSON.parse(errorMessage);
+      } catch {
+        // Not a JSON error, use as is
+      }
+      
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-          <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xl">
-            <h2 className="text-2xl font-bold text-slate-900">
-              {isConfigError ? 'Configuration Required' : 'Oops!'}
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+          <div className="max-w-md w-full bg-white rounded-2xl p-8 shadow-xl border border-slate-200">
+            {/* Error Icon */}
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            
+            <h2 className="text-2xl font-bold text-center text-slate-900">
+              {isConfigError ? '⚠️ Configuration Required' : '😢 Oops! Something went wrong'}
             </h2>
-            <p className="text-slate-600 mt-2">{errorMessage}</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="mt-4 w-full py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition"
-            >
-              Reload Application
-            </button>
+            
+            <p className="text-slate-600 mt-3 text-center">
+              {isConfigError 
+                ? 'Supabase credentials are missing. Please check your .env file.'
+                : parsedError?.error || errorMessage
+              }
+            </p>
+            
+            {parsedError && (
+              <div className="mt-3 p-3 bg-slate-50 rounded-lg">
+                <p className="text-xs font-mono text-slate-500 break-all">
+                  <strong>Operation:</strong> {parsedError.operationType}<br />
+                  <strong>Path:</strong> {parsedError.path || 'N/A'}
+                </p>
+              </div>
+            )}
+            
+            <div className="mt-6 space-y-3">
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+              >
+                🔄 Reload Application
+              </button>
+              
+              <button 
+                onClick={() => window.location.href = '/'}
+                className="w-full py-2.5 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
+              >
+                🏠 Go to Homepage
+              </button>
+            </div>
           </div>
         </div>
       );
     }
+    
     return this.props.children;
   }
 }
 
-// Main App Component
+// ── Main App Component ───────────────────────────────────────────────
 function AppContent() {
   const [count, setCount] = useState(0);
   const [user, setUser] = useState<any>(null);
@@ -173,32 +260,36 @@ function AppContent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event);
-        if (event === 'SIGNED_IN') {
-          const user = session?.user;
-          const userEmail = user?.email;
-          
-          if (user && !isNEUEmail(userEmail)) {
-            toast.error('Access Restricted', {
-              description: 'Only @neu.edu.ph email addresses are allowed.',
-              duration: 5000,
-            });
-            await logout();
-            setUser(null);
-          } else {
-            setUser(user);
-            if (userEmail) {
-              toast.success(`Welcome, ${userEmail}!`, {
-                description: 'You have successfully signed in.',
-                duration: 3000,
+        try {
+          if (event === 'SIGNED_IN') {
+            const user = session?.user;
+            const userEmail = user?.email;
+            
+            if (user && !isNEUEmail(userEmail)) {
+              toast.error('Access Restricted', {
+                description: 'Only @neu.edu.ph email addresses are allowed.',
+                duration: 5000,
               });
+              await logout();
+              setUser(null);
+            } else {
+              setUser(user);
+              if (userEmail) {
+                toast.success(`Welcome, ${userEmail}!`, {
+                  description: 'You have successfully signed in.',
+                  duration: 3000,
+                });
+              }
             }
+          } else if (event === 'SIGNED_OUT') {
+            setUser(null);
+            toast.info('Signed out', {
+              description: 'You have been signed out successfully.',
+              duration: 3000,
+            });
           }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          toast.info('Signed out', {
-            description: 'You have been signed out successfully.',
-            duration: 3000,
-          });
+        } catch (error) {
+          handleSupabaseError(error, OperationType.WRITE, 'authStateChange');
         }
         setLoading(false);
       }
@@ -542,7 +633,7 @@ function AppContent() {
   );
 }
 
-// Wrap AppContent with ErrorBoundary
+// ── Export App wrapped with ErrorBoundary ────────────────────────────
 export default function App() {
   return (
     <ErrorBoundary>
