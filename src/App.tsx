@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -13,12 +14,17 @@ import {
   Package,
   MessageCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  ChevronRight,
+  Star,
+  Clock,
+  Award
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import introJs from 'intro.js';
 import 'intro.js/introjs.css';
 import { supabase, signInWithGoogle, logout, getCurrentUser } from './lib/supabase';
+import clsx from 'clsx';
 
 // ── Operation type for structured error logging ─────────────────────
 export enum OperationType {
@@ -49,33 +55,20 @@ export function handleSupabaseError(
     operationType,
     path
   };
-  
-  // Log structured error to console
   console.error('Supabase Error: ', JSON.stringify(errInfo, null, 2));
-  
-  // You can also send to an error tracking service here
-  // Example: sendToErrorTracking(errInfo);
-  
   throw new Error(JSON.stringify(errInfo));
 }
 
 // ── Core knowledge record interfaces ─────────────────────────────────
-// These interfaces define the data structure for the entire application.
-// They will be used in upcoming PRs:
-// - PR #008: Lost Item Form (creates Items)
-// - PR #009: Browse & Search (displays Items)
-// - PR #010: Comments System (uses ItemComment)
-// - PR #011: Notifications (uses AppNotification)
-
 export interface Item {
   id:           string;
   type:         'lost' | 'found';
   title:        string;
   description:  string;
-  category:     string;          // maps to 6-category KM taxonomy
-  location:     string;          // geographic knowledge tag
-  date:         any;             // temporal knowledge tag
-  image_urls:   string[];        // visual knowledge (up to 5)
+  category:     string;
+  location:     string;
+  date:         any;
+  image_urls:   string[];
   author_uid:   string;
   author_name:  string;
   author_photo?: string;
@@ -93,7 +86,7 @@ export interface ItemComment {
   author_photo?: string;
   content:     string;
   created_at:  string;
-  parent_id?:  string;   // enables threaded replies
+  parent_id?:  string;
 }
 
 export interface AppNotification {
@@ -105,7 +98,7 @@ export interface AppNotification {
   itemId?:   string;
 }
 
-// ── Type Guards for runtime type checking ────────────────────────────
+// ── Type Guards ────────────────────────────────────────────────────
 export function isItem(obj: any): obj is Item {
   return obj && typeof obj.id === 'string' && typeof obj.title === 'string';
 }
@@ -117,6 +110,80 @@ export function isItemComment(obj: any): obj is ItemComment {
 export function isAppNotification(obj: any): obj is AppNotification {
   return obj && typeof obj.id === 'string' && typeof obj.type === 'string';
 }
+
+// ── Shared UI Components ─────────────────────────────────────────────
+const cn = clsx;
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  children: React.ReactNode;
+}
+
+const Button: React.FC<ButtonProps> = ({ children, className, variant = 'primary', ...props }) => {
+  const variants = {
+    primary:   'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-md',
+    secondary: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-sm',
+    ghost:     'bg-transparent text-slate-600 hover:bg-slate-100',
+    danger:    'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700',
+  };
+  return (
+    <button className={cn(
+      'px-4 py-2 rounded-xl font-medium transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2',
+      variants[variant],
+      className
+    )} {...props}>
+      {children}
+    </button>
+  );
+};
+
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+  error?: string;
+}
+
+const Input: React.FC<InputProps> = ({ label, error, className, ...props }) => {
+  return (
+    <div className="space-y-1">
+      {label && <label className="block text-sm font-medium text-slate-700">{label}</label>}
+      <input
+        className={cn(
+          'w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 transition',
+          error 
+            ? 'border-red-500 focus:ring-red-200' 
+            : 'border-slate-200 focus:ring-blue-200 focus:border-blue-500',
+          className
+        )}
+        {...props}
+      />
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+};
+
+interface BadgeProps {
+  children: React.ReactNode;
+  variant?: 'default' | 'lost' | 'found' | 'resolved' | 'success' | 'warning';
+}
+
+const Badge: React.FC<BadgeProps> = ({ children, variant = 'default' }) => {
+  const variants = {
+    default:  'bg-slate-100 text-slate-600',
+    lost:     'bg-blue-100 text-blue-700',
+    found:    'bg-green-100 text-green-700',
+    resolved: 'bg-purple-100 text-purple-700',
+    success:  'bg-emerald-100 text-emerald-700',
+    warning:  'bg-orange-100 text-orange-700',
+  };
+  return (
+    <span className={cn(
+      'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest',
+      variants[variant]
+    )}>
+      {children}
+    </span>
+  );
+};
 
 // ── Error Boundary — catches runtime errors and shows recovery UI ──
 interface ErrorBoundaryProps {
@@ -139,73 +206,33 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
   
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log error to console with details
     console.error('ErrorBoundary caught an error:', error);
     console.error('Error Info:', errorInfo);
-    
-    // You can also send to an error tracking service here
-    // Example: sendToErrorTracking({ error, errorInfo });
   }
   
   render() {
     if (this.state.hasError) {
       let errorMessage = this.state.error?.message || 'Something went wrong.';
-      
-      // Detect Supabase config error specifically
       const isConfigError = errorMessage.includes('Supabase URL') || 
-                           errorMessage.includes('credentials missing') ||
-                           errorMessage.includes('VITE_SUPABASE');
-      
-      // Try to parse JSON error if it's from handleSupabaseError
-      let parsedError = null;
-      try {
-        parsedError = JSON.parse(errorMessage);
-      } catch {
-        // Not a JSON error, use as is
-      }
+                           errorMessage.includes('credentials missing');
       
       return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6">
           <div className="max-w-md w-full bg-white rounded-2xl p-8 shadow-xl border border-slate-200">
-            {/* Error Icon */}
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
               <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            
             <h2 className="text-2xl font-bold text-center text-slate-900">
               {isConfigError ? '⚠️ Configuration Required' : '😢 Oops! Something went wrong'}
             </h2>
-            
-            <p className="text-slate-600 mt-3 text-center">
-              {isConfigError 
-                ? 'Supabase credentials are missing. Please check your .env file.'
-                : parsedError?.error || errorMessage
-              }
-            </p>
-            
-            {parsedError && (
-              <div className="mt-3 p-3 bg-slate-50 rounded-lg">
-                <p className="text-xs font-mono text-slate-500 break-all">
-                  <strong>Operation:</strong> {parsedError.operationType}<br />
-                  <strong>Path:</strong> {parsedError.path || 'N/A'}
-                </p>
-              </div>
-            )}
-            
+            <p className="text-slate-600 mt-3 text-center">{errorMessage}</p>
             <div className="mt-6 space-y-3">
-              <button 
-                onClick={() => window.location.reload()}
-                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-              >
+              <button onClick={() => window.location.reload()} className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
                 🔄 Reload Application
               </button>
-              
-              <button 
-                onClick={() => window.location.href = '/'}
-                className="w-full py-2.5 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
-              >
+              <button onClick={() => window.location.href = '/'} className="w-full py-2.5 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300">
                 🏠 Go to Homepage
               </button>
             </div>
@@ -213,24 +240,157 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         </div>
       );
     }
-    
     return this.props.children;
   }
 }
 
-// ── Main App Component ───────────────────────────────────────────────
+// ── Views (Pages) ────────────────────────────────────────────────────
+
+// Home View - Discover lost & found items
+const HomeView = () => {
+  const [items, setItems] = useState<Item[]>([]);
+  
+  // Mock data for demo
+  useEffect(() => {
+    setItems([
+      { id: '1', type: 'lost', title: 'MacBook Pro', description: 'Silver MacBook Pro 14"', category: 'Electronics', location: 'Library', date: new Date(), image_urls: [], author_uid: 'user1', author_name: 'John Doe', status: 'active', created_at: new Date(), contact_info: 'john@neu.edu.ph', is_anonymous: false },
+      { id: '2', type: 'found', title: 'Student ID', description: 'NEU ID Card - Juan Dela Cruz', category: 'ID/Cards', location: 'Canteen', date: new Date(), image_urls: [], author_uid: 'user2', author_name: 'Jane Smith', status: 'active', created_at: new Date(), contact_info: 'jane@neu.edu.ph', is_anonymous: false },
+    ]);
+  }, []);
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-800">Discover Items</h2>
+        <div className="flex gap-2">
+          <Badge variant="lost">Lost</Badge>
+          <Badge variant="found">Found</Badge>
+          <Badge variant="resolved">Resolved</Badge>
+        </div>
+      </div>
+      <div className="grid gap-4">
+        {items.map((item) => (
+          <div key={item.id} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-slate-800">{item.title}</h3>
+                <p className="text-sm text-slate-500 mt-1">{item.description}</p>
+                <div className="flex gap-2 mt-2">
+                  <Badge variant={item.type === 'lost' ? 'lost' : 'found'}>{item.type}</Badge>
+                  <span className="text-xs text-slate-400">{item.location}</span>
+                </div>
+              </div>
+              <Button variant="ghost" className="text-blue-600">View →</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// My Posts View
+const MyPostsView = () => {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">My Posts</h2>
+      <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
+        <Package className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+        <p className="text-slate-500">You haven't posted any items yet.</p>
+        <Button variant="primary" className="mt-4">Report Lost Item</Button>
+      </div>
+    </div>
+  );
+};
+
+// Resolved History View
+const ResolvedHistory = () => {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">Resolved Items</h2>
+      <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
+        <CheckCircle className="w-12 h-12 mx-auto text-green-300 mb-3" />
+        <p className="text-slate-500">No resolved items yet.</p>
+      </div>
+    </div>
+  );
+};
+
+// Notifications View
+const NotificationsView = () => {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">Notifications</h2>
+      <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
+        <Bell className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+        <p className="text-slate-500">No new notifications.</p>
+      </div>
+    </div>
+  );
+};
+
+// Profile View
+const ProfileView = () => {
+  const [user, setUser] = useState<any>(null);
+  
+  useEffect(() => {
+    getCurrentUser().then(setUser);
+  }, []);
+  
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">Profile</h2>
+      <div className="bg-white rounded-xl p-6 border border-slate-100">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xl font-bold">
+            {user?.email?.[0]?.toUpperCase() || 'U'}
+          </div>
+          <div>
+            <p className="font-semibold text-slate-800">{user?.email || 'Not signed in'}</p>
+            <p className="text-sm text-slate-500">NEU Student</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Admin View
+const AdminView = () => {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">Admin Dashboard</h2>
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl p-4 border border-slate-100">
+          <div className="text-2xl font-bold text-blue-600">156</div>
+          <div className="text-sm text-slate-500">Total Items</div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-slate-100">
+          <div className="text-2xl font-bold text-green-600">42</div>
+          <div className="text-sm text-slate-500">Resolved Items</div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-slate-100">
+          <div className="text-2xl font-bold text-purple-600">89</div>
+          <div className="text-sm text-slate-500">Active Users</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main App Component with Routing ───────────────────────────────────
 function AppContent() {
   const [count, setCount] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // Check NEU domain restriction
   const isNEUEmail = (email: string | undefined | null): boolean => {
     if (!email) return false;
     return email.endsWith('@neu.edu.ph');
   };
 
-  // Sync user state
   const syncUser = async () => {
     try {
       const currentUser = await getCurrentUser();
@@ -253,7 +413,6 @@ function AppContent() {
     }
   };
 
-  // Auth state listener
   useEffect(() => {
     syncUser();
 
@@ -300,34 +459,20 @@ function AppContent() {
     };
   }, []);
 
+  const handleNavClick = (view: string) => {
+    navigate(view === 'home' ? '/' : `/${view}`);
+  };
+
   const startTour = () => {
     const intro = introJs();
     intro.setOptions({
       steps: [
-        {
-          title: '🏫 Welcome to NEU Lost & Found',
-          intro: 'Your centralized system for reporting and recovering lost items at NEU.',
-        },
-        {
-          title: '🔐 Sign In with Google',
-          intro: 'Sign in using your @neu.edu.ph email address to report items.',
-          element: document.querySelector('#auth-btn'),
-        },
-        {
-          title: '📝 Report Lost Items',
-          intro: 'Click here to report a lost item.',
-          element: document.querySelector('#report-btn'),
-        },
-        {
-          title: '🔍 Browse Items',
-          intro: 'Search through found items that match your lost belongings.',
-          element: document.querySelector('#browse-btn'),
-        },
+        { title: '🏫 Welcome', intro: 'Welcome to NEU Lost & Found!' },
+        { title: '🔐 Sign In', intro: 'Sign in with your @neu.edu.ph email', element: document.querySelector('#auth-btn') },
+        { title: '📝 Report', intro: 'Report lost or found items', element: document.querySelector('#report-btn') },
       ],
       showProgress: true,
-      showBullets: true,
       exitOnOverlayClick: true,
-      tooltipPosition: 'bottom',
     });
     intro.start();
   };
@@ -335,22 +480,16 @@ function AppContent() {
   const handleReportLost = () => {
     if (!user) {
       toast.error('Authentication Required', {
-        description: 'Please sign in with your @neu.edu.ph email to report items.',
+        description: 'Please sign in to report items.',
         duration: 4000,
       });
       return;
     }
-    toast.info('Report Lost Item', {
-      description: 'This feature will be available in PR #008!',
-      duration: 4000,
-    });
+    toast.info('Report Lost Item', { description: 'Feature coming in PR #009!', duration: 4000 });
   };
 
   const handleBrowseFound = () => {
-    toast.info('Browse Found Items', {
-      description: 'Browse and search functionality coming in PR #008!',
-      duration: 4000,
-    });
+    toast.info('Browse Items', { description: 'Browse and search coming in PR #009!', duration: 4000 });
   };
 
   const handleAuth = async () => {
@@ -360,10 +499,7 @@ function AppContent() {
       setLoading(true);
       const { error } = await signInWithGoogle();
       if (error) {
-        toast.error('Sign in failed', {
-          description: error.message,
-          duration: 4000,
-        });
+        toast.error('Sign in failed', { description: error.message, duration: 4000 });
         setLoading(false);
       }
     }
@@ -378,266 +514,68 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      <Toaster 
-        position="top-right" 
-        richColors 
-        expand={false}
-        closeButton
-        toastOptions={{
-          duration: 4000,
-        }}
-      />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <Toaster position="top-right" richColors closeButton />
       
       {/* Navigation Bar */}
       <nav className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex items-center gap-2"
-          >
-            <Package className="w-6 h-6 text-blue-600" />
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              NEU Lost & Found
-            </h1>
-          </motion.div>
-          
-          <div className="flex gap-3 items-center">
-            {/* Auth Button */}
-            <motion.button
-              id="auth-btn"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleAuth}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200"
-              style={{
-                background: user ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                color: 'white'
-              }}
-            >
-              {user ? (
-                <>
-                  <LogOut className="w-4 h-4" />
-                  Sign Out
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-4 h-4" />
-                  Sign In with Google
-                </>
-              )}
-            </motion.button>
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+              <Package className="w-6 h-6 text-blue-600" />
+              <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                NEU Lost & Found
+              </h1>
+            </div>
             
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Home className="w-5 h-5 text-slate-600 cursor-pointer hover:text-blue-600 transition" />
-            </motion.button>
+            <div className="flex gap-1">
+              <Button variant="ghost" onClick={() => navigate('/')} className="text-sm">Home</Button>
+              <Button variant="ghost" onClick={() => navigate('/my-posts')} className="text-sm">My Posts</Button>
+              <Button variant="ghost" onClick={() => navigate('/resolved')} className="text-sm">Resolved</Button>
+              <Button variant="ghost" onClick={() => navigate('/notifications')} className="text-sm relative">
+                <Bell className="w-4 h-4" />
+                {false && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/profile')} className="text-sm">
+                <User className="w-4 h-4" />
+              </Button>
+            </div>
             
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Search className="w-5 h-5 text-slate-600 cursor-pointer hover:text-blue-600 transition" />
-            </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-lg hover:bg-slate-100 transition relative"
-            >
-              <Bell className="w-5 h-5 text-slate-600 cursor-pointer hover:text-blue-600 transition" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-lg hover:bg-slate-100 transition"
-            >
-              <User className="w-5 h-5 text-slate-600 cursor-pointer hover:text-blue-600 transition" />
-            </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Settings className="w-5 h-5 text-slate-600 cursor-pointer hover:text-blue-600 transition" />
-            </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={startTour}
-              className="p-2 rounded-lg hover:bg-slate-100 transition"
-            >
-              <HelpCircle className="w-5 h-5 text-slate-600 cursor-pointer hover:text-purple-600 transition" />
-            </motion.button>
+            <Button variant={user ? 'danger' : 'primary'} onClick={handleAuth} className="text-sm">
+              {user ? <><LogOut className="w-4 h-4" /> Sign Out</> : <><LogIn className="w-4 h-4" /> Sign In</>}
+            </Button>
           </div>
         </div>
       </nav>
 
-      {/* User Info Bar (if signed in) */}
       {user && user.email && (
         <div className="bg-green-50 border-b border-green-200 px-4 py-2 text-sm text-green-700 text-center">
           ✅ Signed in as: <strong>{user.email}</strong>
         </div>
       )}
 
-      {/* Hero Section */}
-      <main className="container mx-auto px-4 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="mb-8"
-          >
-            <Package className="w-20 h-20 mx-auto text-blue-600" />
-          </motion.div>
-          
-          <h2 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-            Welcome to NEU Lost & Found
-          </h2>
-          
-          <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-            A knowledge management system for NEU students to post lost and found items, 
-            comment, and resolve issues efficiently.
-          </p>
-
-          {/* Auth Status Message */}
-          {!user && (
-            <div className="mb-8 p-4 bg-blue-100 rounded-lg max-w-md mx-auto">
-              <p className="text-blue-700">
-                🔐 Please sign in with your <strong>@neu.edu.ph</strong> email to report items
-              </p>
-            </div>
-          )}
-          
-          <div className="flex gap-4 justify-center flex-wrap">
-            <motion.button
-              id="report-btn"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleReportLost}
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-            >
-              <PlusCircle className="w-5 h-5" />
-              Report Lost Item
-            </motion.button>
-            
-            <motion.button
-              id="browse-btn"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleBrowseFound}
-              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-            >
-              <Search className="w-5 h-5" />
-              Browse Found Items
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => toast.success('Feature coming in PR #008!')}
-              className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-            >
-              <MessageCircle className="w-5 h-5" />
-              Community Board
-            </motion.button>
-          </div>
-
-          {/* Stats Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto"
-          >
-            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-6 shadow-md">
-              <Package className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-slate-800">150+</div>
-              <div className="text-sm text-slate-600">Items Reported</div>
-            </div>
-            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-6 shadow-md">
-              <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-slate-800">85+</div>
-              <div className="text-sm text-slate-600">Successfully Resolved</div>
-            </div>
-            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-6 shadow-md">
-              <User className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-slate-800">200+</div>
-              <div className="text-sm text-slate-600">Active Students</div>
-            </div>
-          </motion.div>
-
-          {/* Demo Counter */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-12 p-6 bg-white/60 backdrop-blur-sm rounded-xl shadow-md max-w-md mx-auto"
-          >
-            <p className="text-slate-700 mb-3 font-semibold">⚡ Test React State:</p>
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                setCount((c) => c + 1);
-                toast.success(`Button clicked ${count + 1} times!`, {
-                  duration: 1500,
-                  icon: '🎯',
-                });
-              }}
-              className="px-6 py-2 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-lg hover:from-slate-700 hover:to-slate-800 transition font-semibold shadow-md"
-            >
-              Clicked {count} {count === 1 ? 'time' : 'times'}
-            </motion.button>
-          </motion.div>
-
-          {/* Tech Stack Information */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-12 pt-8 border-t border-slate-200"
-          >
-            <div className="text-sm text-slate-500">
-              <p className="font-semibold mb-2">Built with Modern Stack:</p>
-              <div className="flex flex-wrap gap-3 justify-center">
-                <span className="px-2 py-1 bg-blue-100 rounded text-blue-700">Vite 6</span>
-                <span className="px-2 py-1 bg-cyan-100 rounded text-cyan-700">React 19</span>
-                <span className="px-2 py-1 bg-blue-100 rounded text-blue-700">TypeScript</span>
-                <span className="px-2 py-1 bg-purple-100 rounded text-purple-700">Tailwind CSS 3</span>
-                <span className="px-2 py-1 bg-green-100 rounded text-green-700">Supabase</span>
-                <span className="px-2 py-1 bg-yellow-100 rounded text-yellow-700">Google GenAI</span>
-                <span className="px-2 py-1 bg-indigo-100 rounded text-indigo-700">React Router</span>
-                <span className="px-2 py-1 bg-pink-100 rounded text-pink-700">Framer Motion</span>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
+      {/* Main Content with Routes */}
+      <main className="container mx-auto px-4 py-8">
+        <Routes>
+          <Route path="/" element={<HomeView />} />
+          <Route path="/my-posts" element={<MyPostsView />} />
+          <Route path="/resolved" element={<ResolvedHistory />} />
+          <Route path="/notifications" element={<NotificationsView />} />
+          <Route path="/profile" element={<ProfileView />} />
+          <Route path="/admin" element={<AdminView />} />
+        </Routes>
       </main>
     </div>
   );
 }
 
-// ── Export App wrapped with ErrorBoundary ────────────────────────────
-export default function App() {
+// ── Root export with ErrorBoundary and BrowserRouter ───────────────────
+export default function AppWrapper() {
   return (
     <ErrorBoundary>
-      <AppContent />
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }
