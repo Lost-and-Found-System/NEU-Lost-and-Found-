@@ -2,6 +2,8 @@
 
 A digital lost-and-found platform for New Era University students to post lost/found items, browse listings, and connect with each other.
 
+🌐 **Live App:** [https://neu-lost-and-found.vercel.app](https://neu-lost-and-found.vercel.app)
+
 ## Features
 
 - 🔍 Search and filter lost & found posts
