@@ -1,0 +1,32 @@
+/* Resolved History Page Styles */
+.resolved-history-item {
+  filter: grayscale(0.4) contrast(0.9);
+  opacity: 0.85;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.resolved-history-item:hover {
+  filter: grayscale(0) contrast(1);
+  opacity: 1;
+}
+
+.archive-gradient {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.muted-shadow {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+}
+
+.resolved-badge-pulse {
+  animation: resolved-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes resolved-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
