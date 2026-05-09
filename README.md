@@ -43,14 +43,7 @@ cd neu-lost-found
 npm install
 cp .env.example .env
 ```
-
-### Configure environment variables
-
-- VITE_SUPABASE_URL – Get from Supabase Dashboard → Project Settings → API
-- VITE_SUPABASE_ANON_KEY – Get from Supabase Dashboard → Project Settings → API (anon public key)
-- VITE_GEMINI_API_KEY – Get from Google AI Studio (aistudio.google.com)
-
-### Start the development server
+Add your keys to .env, then: 
 ```
 npm run dev
 ```
@@ -60,3 +53,24 @@ npm run dev
 npm run build
 npm run preview
 ```
+
+### Deploy to Vercel
+1. Push code to GitHub
+2. Import repository to https://vercel.com and sign in with GitHub.
+3. Click **Add New** → **Project**
+4. Find your repository (`NEU-Lost-and-Found-`) and click **Import**
+5. Click **Deploy** (Vercel auto-detects Vite)
+
+### Add environment variables
+
+After deployment:
+1. Go to your project dashboard
+2. Click **Settings** → **Environment Variables**
+3. Add each variable:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_GEMINI_API_KEY`
+4. Click **Save**
+5. Go to **Deployments** → click the three dots → **Redeploy**
+
+The app is now live.
