@@ -1,12 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
-
 export async function analyzeItemImage(base64Image: string) {
-  const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
+  const apiKey = (import.meta as any).env.GEMINI_API_KEY;
   
-  // Silently skip if no API key is configured
   if (!apiKey || apiKey === 'placeholder') return null;
 
   try {
+    const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
