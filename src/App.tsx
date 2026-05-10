@@ -3350,7 +3350,6 @@ function App() {
                       <div className="flex items-center gap-2.5 p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-700 font-bold">
                         <ShieldOff className="w-4 h-4 shrink-0" />
                         Comments are disabled — this post has been archived by an administrator.
-                        <div className="text-[8px] mt-1 opacity-50">Status: {selectedItem?.status} | Type: {typeof selectedItem?.status}</div>
                       </div>
                     ) : (
                       <form onSubmit={handleAddComment} className="flex flex-col gap-0 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
