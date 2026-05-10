@@ -7,14 +7,14 @@
 ## Summary
 | Total Tests | Passed | Failed | Blocked | Skipped |
 |-------------|--------|--------|---------|---------|
-| 12          |   12   |        |         |         |
+| 10          |   10   |        |         |         |
 
 ## Test Cases
 
 ### Create Post – Happy Path
 | TC ID | Description | Expected Result | Status |
 |-------|-------------|----------------|--------|
-| T-01 | Create lost post – all required fields (title, description, category) | Post created successfully; appears in user's "My Posts" | ✅ |
+| T-01 | Create lost post – all required fields (title, description, category, location, date) | Post created successfully; appears in user's "My Posts" | ✅ |
 | T-02 | Create found post – all valid fields | Post created successfully; type = Found | ✅ |
 
 ### Anonymous Posting
