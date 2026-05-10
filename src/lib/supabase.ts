@@ -11,10 +11,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-/**
- * Supabase client instance configured with project URL and anonymous key
- * Includes auth persistence and auto token refresh
- */
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder',
@@ -28,16 +24,6 @@ export const supabase = createClient(
 
 // ── Auth Helpers ──────────────────────────────────────────────────
 
-/**
- * Signs in a user using Google OAuth provider
- * @returns {Promise<{ data: any; error: Error | null }>} 
- * Returns sign-in data or error object
- * @example
- * const { data, error } = await signInWithGoogle()
- * if (error) {
- *   console.error('Sign in failed:', error)
- * }
- */
 export const signInWithGoogle = async () => {
   try {
     const redirectUrl = import.meta.env.VITE_APP_URL || window.location.origin;
@@ -57,27 +43,10 @@ export const signInWithGoogle = async () => {
   }
 };
 
-/**
- * Signs out the current authenticated user
- * @returns {Promise<{ error: Error | null }>} 
- * Returns empty data or error object
- * @example
- * await logout()
- */
 export const logout = async () => {
   return await supabase.auth.signOut();
 };
 
-/**
- * Gets the current active session
- * @returns {Promise<Session | null>} 
- * Returns the session object if authenticated, null otherwise
- * @example
- * const session = await getCurrentSession()
- * if (session) {
- *   console.log('User is logged in')
- * }
- */
 export const getCurrentSession = async () => {
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
@@ -96,16 +65,6 @@ export const getCurrentSession = async () => {
   }
 };
 
-/**
- * Gets the current authenticated user
- * @returns {Promise<User | null>} 
- * Returns the user object if authenticated, null otherwise
- * @example
- * const user = await getCurrentUser()
- * if (user) {
- *   console.log(user.email)
- * }
- */
 export const getCurrentUser = async () => {
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
