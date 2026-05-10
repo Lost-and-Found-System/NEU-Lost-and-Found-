@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, signInWithGoogle, logout, signInWithEmail, signUpWithEmail } from './lib/supabase';
-import { analyzeItemImage } from './lib/gemini';
-import { cn, formatDate } from './lib/utils';
+import { supabase, signInWithGoogle, logout, signInWithEmail, signUpWithEmail } from '../supabase';
+import { analyzeItemImage } from '../gemini';
+import { cn, formatDate } from '../utils';
 import { 
   Search, 
   Plus, 
