@@ -277,6 +277,7 @@ function App() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [editFormData, setEditFormData] = useState<any>(null);
   const [isUpdatingPost, setIsUpdatingPost] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
@@ -309,7 +310,7 @@ function App() {
   const [isTourActive, setIsTourActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<{ id: string, preview: string, progress: number }[]>([]);
-  const [userRole, setUserRole] = useState<'user' | 'admin'>('user');
+  const [userRole, setUserRole] = useState<'user' | 'admin' | 'super_admin'>('user');
   const [hasSeenTour, setHasSeenTour] = useState<boolean | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -462,8 +463,45 @@ function App() {
   const [myPostsFilter, setMyPostsFilter] = useState<'all' | 'lost' | 'found' | 'resolved' | 'archived'>('all');
   const [adminFilter, setAdminFilter] = useState<'all' | 'active' | 'resolved' | 'archived'>('all');
   const [reports, setReports] = useState<any[]>([]);
-  const [adminTab, setAdminTab] = useState<'posts' | 'reports'>('posts');
+  const [adminTab, setAdminTab] = useState<'posts' | 'reports' | 'users'>('posts');
   const [reportFilter, setReportFilter] = useState<'all' | 'pending' | 'resolved'>('pending');
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  const fetchAllUsers = async () => {
+    if (userRole !== 'super_admin') return;
+    setUsersLoading(true);
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) setAllUsers(data);
+    setUsersLoading(false);
+  };
+
+  useEffect(() => {
+    if (userRole === 'super_admin') fetchAllUsers();
+  }, [userRole]);
+
+  const updateUserRole = async (userId: string, newRole: 'user' | 'admin' | 'super_admin') => {
+    const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId);
+    if (!error) {
+      setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      sonnerToast.success(`User role updated to ${newRole}`);
+    } else {
+      sonnerToast.error('Failed to update role.');
+    }
+  };
+
+  const toggleUserDisabled = async (userId: string, currentlyDisabled: boolean) => {
+    const { error } = await supabase.from('users').update({ is_disabled: !currentlyDisabled }).eq('id', userId);
+    if (!error) {
+      setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, is_disabled: !currentlyDisabled } : u));
+      sonnerToast.success(currentlyDisabled ? 'User re-enabled.' : 'User disabled.');
+    } else {
+      sonnerToast.error('Failed to update user.');
+    }
+  };
 
   // Fetch reports for admin
   useEffect(() => {
@@ -716,6 +754,7 @@ function App() {
 
   useEffect(() => {
     if (selectedItem?.id) {
+      setActiveImageIndex(0);
       fetchComments(selectedItem.id);
     } else {
       setComments([]);
@@ -1105,6 +1144,7 @@ function App() {
       if (!user) return;
       
       const isAdminEmail = user.email === 'angellyn.tolentino@neu.edu.ph';
+      const isSuperAdminEmail = user.email === 'angellyn.tolentino@neu.edu.ph';
       
       try {
         const { data: profile, error: fetchError } = await supabase
@@ -1117,8 +1157,8 @@ function App() {
           console.error("Error fetching user profile:", fetchError);
         }
 
-        const roleToSet = isAdminEmail ? 'admin' : (profile?.role || 'user');
-        setUserRole(roleToSet as 'user' | 'admin');
+        const roleToSet = isSuperAdminEmail && !profile?.role ? 'super_admin' : (profile?.role || (isAdminEmail ? 'admin' : 'user'));
+        setUserRole(roleToSet as 'user' | 'admin' | 'super_admin');
         
         // Use the profile's has_seen_tour value if it exists, otherwise default to false
         const seenTour = profile ? profile.has_seen_tour : false;
@@ -1180,7 +1220,7 @@ function App() {
     };
   }, [user]);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
@@ -1192,10 +1232,21 @@ function App() {
       return;
     }
 
+    // Validate file sizes — videos max 50MB, images max 10MB
+    for (const file of files) {
+      const isVideo = file.type.startsWith('video/');
+      const maxSize = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        showToast(`${file.name} is too large. Max size: ${isVideo ? '50MB' : '10MB'}`, 'error');
+        return;
+      }
+    }
+
     const newUploadingFiles = files.map(file => ({
       id: Math.random().toString(36).substring(7),
-      preview: URL.createObjectURL(file),
-      progress: 0
+      preview: file.type.startsWith('video/') ? '' : URL.createObjectURL(file),
+      progress: 0,
+      isVideo: file.type.startsWith('video/')
     }));
 
     setUploadingFiles(prev => [...prev, ...newUploadingFiles]);
@@ -1210,24 +1261,30 @@ function App() {
     try {
       const uploadPromises = files.map(async (file, index) => {
         const fileId = newUploadingFiles[index].id;
+        const isVideo = file.type.startsWith('video/');
         
         try {
-          // Compress
-          const compressedFile = await imageCompression(file, compressionOptions);
+          let fileToUpload: File | Blob = file;
+
+          // Only compress images
+          if (!isVideo) {
+            fileToUpload = await imageCompression(file, compressionOptions);
+          }
           
           setUploadingFiles(prev => prev.map(f => 
             f.id === fileId ? { ...f, progress: 30 } : f
           ));
 
-          const formData = new FormData();
-          formData.append('file', compressedFile);
-          formData.append('upload_preset', uploadPreset);
+          const uploadFormData = new FormData();
+          uploadFormData.append('file', fileToUpload);
+          uploadFormData.append('upload_preset', uploadPreset);
 
+          const resourceType = isVideo ? 'video' : 'image';
           const response = await fetch(
-            `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+            `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
             {
               method: 'POST',
-              body: formData,
+              body: uploadFormData,
             }
           );
 
@@ -1647,13 +1704,13 @@ function App() {
                     )}
                   </button>
                 ))}
-                {userRole === 'admin' && (
+                {(userRole === 'admin' || userRole === 'super_admin') && (
                   <button 
                     onClick={() => setCurrentView('admin')}
                     className={cn("text-sm font-bold transition-colors flex items-center gap-1.5", currentView === 'admin' ? "text-red-600" : "text-slate-500 hover:text-red-600")}
                   >
                     <Shield className="w-4 h-4" />
-                    Admin
+                    {userRole === 'super_admin' ? 'Super Admin' : 'Admin'}
                   </button>
                 )}
               </nav>
@@ -1705,7 +1762,7 @@ function App() {
                   )}
                 </button>
               ))}
-              {userRole === 'admin' && (
+              {(userRole === 'admin' || userRole === 'super_admin') && (
                 <button
                   onClick={() => setCurrentView('admin')}
                   className={cn(
@@ -1714,7 +1771,7 @@ function App() {
                   )}
                 >
                   <Shield className="w-6 h-6" />
-                  <span className="text-[10px] font-bold mt-1">Admin</span>
+                  <span className="text-[10px] font-bold mt-1">{userRole === 'super_admin' ? 'S.Admin' : 'Admin'}</span>
                 </button>
               )}
             </div>
@@ -1888,7 +1945,7 @@ function App() {
                   </div>
                 )}
 
-                {currentView === 'admin' && userRole === 'admin' && (
+                {currentView === 'admin' && (userRole === 'admin' || userRole === 'super_admin') && (
                   <div className="space-y-10">
                     <div className="flex flex-col items-center text-center space-y-6">
                       <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center text-red-600 shadow-lg shadow-red-100">
@@ -1916,6 +1973,17 @@ function App() {
                             </span>
                           )}
                         </button>
+                        {userRole === 'super_admin' && (
+                          <button
+                            onClick={() => { setAdminTab('users'); fetchAllUsers(); }}
+                            className={cn('flex-1 px-6 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2', adminTab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
+                          >
+                            Users
+                            <span className={cn('text-[10px] font-black px-1.5 py-0.5 rounded-full', adminTab === 'users' ? 'bg-blue-100 text-blue-600' : 'bg-slate-300 text-slate-600')}>
+                              {allUsers.length}
+                            </span>
+                          </button>
+                        )}
                       </div>
 
                       {adminTab === 'posts' && (
@@ -2036,6 +2104,92 @@ function App() {
                       </div>
                     )}
 
+                    {/* Users Tab */}
+                    {adminTab === 'users' && userRole === 'super_admin' && (
+                      <div className="space-y-4">
+                        {usersLoading ? (
+                          <div className="py-20 text-center">
+                            <Loader2 className="w-8 h-8 animate-spin text-slate-300 mx-auto" />
+                          </div>
+                        ) : allUsers.length === 0 ? (
+                          <div className="py-20 text-center bg-white rounded-3xl border border-slate-100">
+                            <User className="w-8 h-8 text-slate-200 mx-auto mb-3" />
+                            <p className="text-slate-400 font-medium">No users found.</p>
+                          </div>
+                        ) : (
+                          allUsers.map(u => (
+                            <div key={u.id} className={cn("bg-white rounded-2xl border p-5 shadow-sm space-y-3 transition-all", u.is_disabled ? "border-red-100 opacity-60" : "border-slate-100")}>
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                  {u.avatar_url ? (
+                                    <img src={u.avatar_url} className="w-10 h-10 rounded-full border border-slate-100" alt="" />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                                      <User className="w-5 h-5 text-slate-400" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <p className="font-bold text-slate-900 text-sm">{u.display_name || u.email}</p>
+                                    <p className="text-xs text-slate-400">{u.email}</p>
+                                  </div>
+                                </div>
+                                <span className={cn(
+                                  'text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wide',
+                                  u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' :
+                                  u.role === 'admin' ? 'bg-red-100 text-red-700' :
+                                  'bg-slate-100 text-slate-600'
+                                )}>
+                                  {u.role || 'user'}
+                                </span>
+                              </div>
+                              {u.id !== user?.id && (
+                                <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-50">
+                                  {u.role !== 'super_admin' && (
+                                    <button
+                                      onClick={() => updateUserRole(u.id, 'super_admin')}
+                                      className="text-xs font-bold text-purple-600 hover:text-purple-700 bg-purple-50 px-3 py-1.5 rounded-xl transition-colors border border-purple-200"
+                                    >
+                                      Make Super Admin
+                                    </button>
+                                  )}
+                                  {u.role !== 'admin' && (
+                                    <button
+                                      onClick={() => updateUserRole(u.id, 'admin')}
+                                      className="text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-xl transition-colors border border-red-200"
+                                    >
+                                      Make Admin
+                                    </button>
+                                  )}
+                                  {u.role !== 'user' && (
+                                    <button
+                                      onClick={() => updateUserRole(u.id, 'user')}
+                                      className="text-xs font-bold text-slate-600 hover:text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl transition-colors border border-slate-200"
+                                    >
+                                      Demote to User
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => toggleUserDisabled(u.id, u.is_disabled)}
+                                    className={cn(
+                                      "text-xs font-bold px-3 py-1.5 rounded-xl transition-colors border ml-auto",
+                                      u.is_disabled
+                                        ? "text-emerald-600 bg-emerald-50 border-emerald-200"
+                                        : "text-red-600 bg-red-50 border-red-200"
+                                    )}
+                                  >
+                                    {u.is_disabled ? 'Re-enable' : 'Disable'}
+                                  </button>
+                                </div>
+                              )}
+                              {u.id === user?.id && (
+                                <p className="text-[10px] text-slate-400 font-bold pt-2 border-t border-slate-50">This is you</p>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
                     {adminTab === 'posts' && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {items
                         .filter(item => adminFilter === 'all' || item.status === adminFilter)
@@ -2121,10 +2275,13 @@ function App() {
                         <h2 className="text-3xl font-extrabold text-slate-900 font-serif">{user.user_metadata.full_name || user.email}</h2>
                         <div className="flex items-center justify-center gap-2 mt-1">
                           <p className="text-slate-500 font-medium">{user.email}</p>
-                          {userRole === 'admin' && (
-                            <span className="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-red-100 flex items-center gap-1">
+                          {(userRole === 'admin' || userRole === 'super_admin') && (
+                            <span className={cn(
+                              "px-2 py-0.5 text-[10px] font-black uppercase tracking-widest rounded-full border flex items-center gap-1",
+                              userRole === 'super_admin' ? "bg-purple-50 text-purple-600 border-purple-100" : "bg-red-50 text-red-600 border-red-100"
+                            )}>
                               <Shield className="w-3 h-3" />
-                              Admin
+                              {userRole === 'super_admin' ? 'Super Admin' : 'Admin'}
                             </span>
                           )}
                         </div>
@@ -2699,20 +2856,34 @@ function App() {
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label htmlFor="item-photos" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Photos (Max 5)</label>
+                      <label htmlFor="item-photos" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Photos & Videos (Max 5)</label>
                       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                        {formData.image_urls.map((url, idx) => (
-                          <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group/img">
-                            <img src={url} className="w-full h-full object-cover" alt="Preview" />
-                            <button 
-                              type="button"
-                              onClick={() => removeImage(idx)}
-                              className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
+                        {formData.image_urls.map((url, idx) => {
+                          const isVideo = url.includes('/video/') || url.match(/\.(mp4|mov|avi|webm)$/i);
+                          return (
+                            <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group/img bg-slate-100">
+                              {isVideo ? (
+                                <video src={url} className="w-full h-full object-cover" muted />
+                              ) : (
+                                <img src={url} className="w-full h-full object-cover" alt="Preview" />
+                              )}
+                              {isVideo && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                  <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-slate-800 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                  </div>
+                                </div>
+                              )}
+                              <button 
+                                type="button"
+                                onClick={() => removeImage(idx)}
+                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
                         {uploadingFiles.map((f) => (
                           <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden border border-blue-200 bg-slate-50">
                             <img src={f.preview} className="w-full h-full object-cover opacity-50 grayscale-[50%]" alt="Uploading" />
@@ -2733,8 +2904,8 @@ function App() {
                             <input 
                               type="file" 
                               multiple
-                              accept="image/*" 
-                              onChange={handleImageUpload}
+                              accept="image/*,video/*" 
+                              onChange={handleMediaUpload}
                               className="absolute inset-0 opacity-0 cursor-pointer z-10"
                               disabled={isUploading}
                             />
@@ -2754,17 +2925,17 @@ function App() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label htmlFor="item-title" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Title</label>
+                        <label htmlFor="item-title" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest flex items-center gap-1">Title <span className="text-red-500">*</span></label>
                         <Input 
                           id="item-title"
-                          placeholder="What did you find/lose?" 
+                          placeholder="What did you find/lose?"
                           required
                           value={formData.title}
                           onChange={(e: any) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label htmlFor="item-category" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Category</label>
+                        <label htmlFor="item-category" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest flex items-center gap-1">Category <span className="text-red-500">*</span></label>
                         <select 
                           id="item-category"
                           className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm"
@@ -2781,11 +2952,12 @@ function App() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label htmlFor="item-description" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Description</label>
+                      <label htmlFor="item-description" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest flex items-center gap-1">Description <span className="text-red-500">*</span></label>
                       <textarea 
                         id="item-description"
                         className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px] text-slate-700 text-sm"
                         placeholder="Provide details (color, brand, unique marks)..."
+                        required
                         value={formData.description}
                         onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                       />
@@ -2793,20 +2965,23 @@ function App() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label htmlFor="item-location" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Location</label>
+                        <label htmlFor="item-location" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest flex items-center gap-1">
+                          Location <span className="text-red-500">*</span>
+                        </label>
                         <div className="relative">
                           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" aria-hidden="true" />
                           <Input 
                             id="item-location"
                             className="pl-10"
-                            placeholder="Where was it?" 
+                            placeholder="Where was it?"
+                            required
                             value={formData.location}
                             onChange={(e: any) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                           />
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <label htmlFor="item-date" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest">Date</label>
+                        <label htmlFor="item-date" className="text-[10px] font-bold text-slate-600 uppercase ml-2 tracking-widest flex items-center gap-1">Date <span className="text-red-500">*</span></label>
                         <div className="relative">
                           <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600" aria-hidden="true" />
                           <Input 
@@ -2865,7 +3040,7 @@ function App() {
                     </div>
                   </div>
 
-                        <Button type="submit" disabled={isUploading || (!formData.is_anonymous && !formData.contact_info.trim())} className="w-full py-4 rounded-2xl text-lg shadow-xl shadow-blue-100">
+                        <Button type="submit" disabled={isUploading || (!formData.is_anonymous && !formData.contact_info.trim()) || !formData.location.trim() || !formData.title.trim() || !formData.description.trim() || !formData.category || !formData.date} className="w-full py-4 rounded-2xl text-lg shadow-xl shadow-blue-100">
                           {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Post Listing'}
                         </Button>
                         {!formData.is_anonymous && !formData.contact_info.trim() && (
@@ -2903,8 +3078,8 @@ function App() {
                 <div className="flex-1 relative overflow-hidden">
                   {selectedItem.image_urls && selectedItem.image_urls.length > 0 ? (
                     <img 
-                      src={selectedItem.image_urls[0]} 
-                      className="w-full h-full object-cover" 
+                      src={selectedItem.image_urls[activeImageIndex]} 
+                      className="w-full h-full object-cover transition-all duration-300" 
                       alt={selectedItem.title} 
                     />
                   ) : (
@@ -2922,11 +3097,32 @@ function App() {
                 </div>
                 {selectedItem.image_urls && selectedItem.image_urls.length > 1 && (
                   <div className="p-4 bg-white/50 backdrop-blur-sm flex gap-2 overflow-x-auto" role="list" aria-label="Item images">
-                    {selectedItem.image_urls.map((url, idx) => (
-                      <div key={idx} className="w-16 h-16 rounded-xl overflow-hidden border-2 border-white shadow-sm flex-shrink-0" role="listitem">
-                        <img src={url} className="w-full h-full object-cover" alt={`Item image preview ${idx + 1}`} />
-                      </div>
-                    ))}
+                    {selectedItem.image_urls.map((url, idx) => {
+                      const isVideo = url.includes('/video/') || url.match(/\.(mp4|mov|avi|webm)$/i);
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={cn(
+                            "w-16 h-16 rounded-xl overflow-hidden border-2 shadow-sm flex-shrink-0 transition-all relative bg-slate-100",
+                            activeImageIndex === idx ? "border-blue-500 scale-105 shadow-md" : "border-white hover:border-blue-300"
+                          )}
+                          role="listitem"
+                          aria-label={`View media ${idx + 1}`}
+                        >
+                          {isVideo ? (
+                            <>
+                              <video src={url} className="w-full h-full object-cover" muted />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                              </div>
+                            </>
+                          ) : (
+                            <img src={url} className="w-full h-full object-cover" alt={`Media preview ${idx + 1}`} />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
