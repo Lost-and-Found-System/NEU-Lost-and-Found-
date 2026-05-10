@@ -19,7 +19,7 @@
 | T-02 | Upload 5 images (maximum allowed) | 5 previews shown; all compress and save | ✅ |
 | T-03 | Upload 6 images | No error shown; only first 5 images are uploaded and previewed; 6th image is silently ignored | ✅ |
 | T-04 | Submit with no images | Post created successfully (images optional) | ✅ |
-| T-05 | Upload 5 images → verify all images are clickable/viewable after post creation | All 5 images are clickable and display properly; thumbnails work for each | ☐ |
+| T-05 | Upload 5 images → verify all images are clickable/viewable after post creation | All 5 images are clickable and display properly; thumbnails work for each | ✅ |
 
 ### Remove Images
 | TC ID | Description | Expected Result | Status |
@@ -30,4 +30,4 @@
 ---
 
 ## Final Verdict
-- ☐ **WATING TO BE APPROVED**
+- ✅ **APPROVED**
