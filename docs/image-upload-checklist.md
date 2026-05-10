@@ -8,7 +8,7 @@
 ## Summary
 | Total Tests | Passed | Failed | Blocked | Skipped |
 |-------------|--------|--------|---------|---------|
-| 8           |        |        |         |         |
+| 7           |        |        |         |         |
 
 ## Test Cases
 
@@ -31,6 +31,3 @@
 
 ## Final Verdict
 - ☐ **WATING TO BE APPROVED**
-- ☐ **NOT APPROVED**
-
-**Notes:** ________________________________________________________________
