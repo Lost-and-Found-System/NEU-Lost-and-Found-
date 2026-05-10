@@ -1,15 +1,48 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
+  /* Soft Pastel Blue Palette */
+  --color-blue-50: #f8fbff;
+  --color-blue-100: #f1f7ff;
+  --color-blue-200: #e2efff;
+  --color-blue-300: #d3e7ff;
+  --color-blue-400: #c4dfff;
+  --color-blue-500: #b5d7ff;
+  --color-blue-600: #a6cfff;
+  --color-blue-700: #97c7ff; /* Main Pastel Blue */
+  --color-blue-800: #1e293b; /* Dark Blue for text */
+  --color-blue-900: #0f172a; /* Darker Blue for text */
+  --color-blue-950: #020617; /* Darkest Blue for text */
+}
 
 @layer base {
   body {
-    @apply antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased font-sans;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
   }
 }
 
-@layer components {
-  .btn-primary {
-    @apply px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors;
-  }
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
 }
