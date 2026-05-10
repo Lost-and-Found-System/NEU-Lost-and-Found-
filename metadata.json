@@ -1,0 +1,7 @@
+{
+  "name": "Remix: Remix: NEU Found Hub",
+  "description": "A digital lost-and-found platform for students to post lost/found items and browse photo-matched listings.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
