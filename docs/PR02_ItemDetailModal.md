@@ -1,4 +1,4 @@
-### PR #030: Item Detail Modal (Image Gallery, Metadata, Contact)
+### PR #02: Item Detail Modal (Image Gallery, Metadata, Contact)
 
 #### 📝 Description
 Implements a full-screen item detail modal in `App.tsx`. Triggered when `selectedItem` state is set. Uses `AnimatePresence` with a backdrop (opacity 0→1) and a panel (y: 50→0).
