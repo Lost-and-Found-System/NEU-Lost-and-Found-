@@ -10,7 +10,7 @@ interface FilterBarProps {
   setActiveTab: (tab: 'all' | 'lost' | 'found') => void;
   activeCategories: string[];
   setActiveCategories: (categories: string[]) => void;
-  categories: string[];
+  
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
