@@ -7,7 +7,7 @@
 ## Summary
 | Total Tests | Passed | Failed | Blocked | Skipped |
 |-------------|--------|--------|---------|---------|
-| 18          | 17     | 0      | 0       | 0       |
+| 18          | 18     | 0      | 0       | 0       |
 
 ---
 
@@ -52,7 +52,7 @@
 | TC-13 | User reports a comment or reply | Report is submitted successfully; comment/reply is flagged in the system | ✅ |
 | TC-14 | Admin views list of reported comments/replies | Admin can see all reported comments/replies with reporter info, reason, and timestamp | ✅ |
 | TC-15 | Admin dismisses a report | Report is marked as resolved/dismissed; comment/reply remains unchanged and visible | ✅ |
-| TC-16 | Admin deletes a reported comment/reply | Comment is permanently deleted; report is marked as resolved; deletion logged |  |
+| TC-16 | Admin deletes a reported comment/reply | Comment is permanently deleted; report is marked as resolved; deletion logged | ✅ |
 | TC-17 | Admin deletes a reply | Reply is permanently deleted | ✅ |
 
 ### Edge Cases
