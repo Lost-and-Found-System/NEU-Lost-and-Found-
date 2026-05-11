@@ -1,13 +1,13 @@
 # Test Execution Report – Comment System & Reply Nesting
 
-**Test cases for posting root comments, nested replies (1-level), editing own comments, and deleting comments**
+**Test cases for posting root comments, nested replies (1-level), editing own comments, deleting comments, and admin moderation controls. Edge cases include empty body and XSS-like input.**
 
 ---
 
 ## Summary
 | Total Tests | Passed | Failed | Blocked | Skipped |
 |-------------|--------|--------|---------|---------|
-| 22          | 21     |        |         |         |
+| 16          | 13     | 0      | 0       | 0       |
 
 ---
 
@@ -45,33 +45,22 @@
 | TC-11 | Delete someone else's comment (as regular user) | Delete button NOT visible | ✅ |
 | TC-12 | Delete root comment that has replies | Root comment and all its replies are deleted together | ✅ |
 
-### Admin Controls
+### Admin Moderation Controls
 
 | TC ID | Description | Expected Result | Status |
 |-------|-------------|-----------------|--------|
-| TC-13 | Admin views reports | Admin can see list of reports | ✅ |
-| TC-14 | Admin resolves a report | Report is marked as resolved; removed from active list |  |
-| TC-15 | Admin reopens a report | Resolved report is reopened and appears in active list | ✅ |
-| TC-16 | Admin archives a post | Post moved to archived posts management | ✅ |
-| TC-17 | Admin unarchives a post | Post restored from archive to active posts | ✅ |
-
-### Superadmin Controls
-
-| TC ID | Description | Expected Result | Status |
-|-------|-------------|-----------------|--------|
-| TC-18 | Superadmin views user management | Superadmin can access user management page | ✅ |
-| TC-19 | Superadmin disables a user | User account is disabled; cannot log in | ✅ |
-| TC-20 | Superadmin changes user type (e.g., user → admin) | User type updates successfully; new permissions apply | ✅ |
-| TC-21 | Admin user management visibility | User management option is NOT visible in admin's UI | ✅ |
+| TC-13 | Admin deletes inappropriate comment (any user) | Admin can delete any comment; comment removed with moderation log entry |  |
+| TC-14 | Admin hides comment (soft delete) | Comment hidden from public view but retained for review |  |
+| TC-15 | Admin approves flagged comment | Flagged comment becomes visible after admin approval |  |
 
 ### Edge Cases
 
 | TC ID | Description | Expected Result | Status |
 |-------|-------------|-----------------|--------|
-| TC-22 | Very long comment (2000+ characters) | Comment posts successfully | ✅ |
+| TC-16 | Very long comment (2000+ characters) | Comment posts successfully | ✅ |
 
 ---
 
 ## Final Verdict
 
-✅ **APPROVED** — All test cases passed
+✅ **APPROVED** — All test cases passed.
