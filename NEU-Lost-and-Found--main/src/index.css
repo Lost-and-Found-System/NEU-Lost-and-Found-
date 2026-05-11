@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
+  /* Soft Pastel Blue Palette */
+  --color-blue-50: #f8fbff;
+  --color-blue-100: #f1f7ff;
+  --color-blue-200: #e2efff;
+  --color-blue-300: #d3e7ff;
+  --color-blue-400: #c4dfff;
+  --color-blue-500: #b5d7ff;
+  --color-blue-600: #a6cfff;
+  --color-blue-700: #97c7ff; /* Main Pastel Blue */
+  --color-blue-800: #1e293b; /* Dark Blue for text */
+  --color-blue-900: #0f172a; /* Darker Blue for text */
+  --color-blue-950: #020617; /* Darkest Blue for text */
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
+}
+
+/* Intro.js Customizations */
+.introjs-tooltip {
+  border-radius: 1.5rem !important;
+  padding: 1.5rem !important;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25) !important;
+  border: 1px solid #f1f5f9 !important;
+  z-index: 10000000 !important; /* Above standard overlay */
+}
+
+/* Ensure only one tooltip is visible if multiple instances somehow leak */
+.introjs-tooltipReferenceLayer {
+  z-index: 9999999 !important;
+}
+
+.introjs-overlay {
+  z-index: 9999998 !important;
+}
+
+.introjs-helperLayer {
+  z-index: 9999997 !important;
+}
+
+.introjs-tooltiptext {
+  font-family: inherit !important;
+  font-size: 14px !important;
+  color: #475569 !important;
+  line-height: 1.6 !important;
+}
+
+.introjs-button {
+  border-radius: 0.75rem !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 0.5rem 1rem !important;
+  text-shadow: none !important;
+  transition: all 0.2s !important;
+}
+
+.introjs-nextbutton {
+  background-color: #97c7ff !important;
+  color: #020617 !important;
+  border: none !important;
+}
+
+.introjs-nextbutton:hover {
+  background-color: #a6cfff !important;
+}
+
+.introjs-prevbutton {
+  background-color: #f8fbff !important;
+  color: #475569 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.introjs-disabled {
+  opacity: 0.5 !important;
+}
+
+.introjs-progress {
+  background-color: #f1f5f9 !important;
+}
+
+.introjs-progressbar {
+  background-color: #97c7ff !important;
+}
+
+.introjs-tooltipbuttons {
+  border-top: 1px solid #f1f5f9 !important;
+  padding-top: 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
