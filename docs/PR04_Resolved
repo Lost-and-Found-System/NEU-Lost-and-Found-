@@ -1,0 +1,31 @@
+### PR #04: ResolvedPostCard & ResolvedFilters (Archive Aesthetics & ARIA)
+
+#### 📝 Description
+Implements two components extracted to `src/components/`:
+
+1. **ResolvedPostCard.tsx** — Archive card with grayscale aesthetic (`grayscale-[0.5]`, `opacity-75`), hover reveals full color. Shows "Resolved" badge, item type badge, image, title, description, metadata, author.
+
+2. **ResolvedFilters.tsx** — Search + category + date range filters. Uses **single-select** category model (unlike multi-select in active feed) because archive browsing is typically more focused.
+
+**Accessibility (ARIA):**
+- `aria-label` on search and date inputs
+- `role="group"` and `aria-label="Filter by category"` on category pill container
+- `aria-pressed` on category buttons
+- All interactive elements have focus states (`focus:ring-2`)
+
+#### 📁 Files Changed
+- `src/components/ResolvedPostCard.tsx` (new file)
+- `src/components/ResolvedFilters.tsx` (new file)
+
+#### 💬 Commit Messages
+- `feat(ux): implement ResolvedPostCard with grayscale archive aesthetic`
+- `feat(ux): implement ResolvedFilters — search, category, date range`
+- `feat(ux): add ARIA labels to all interactive filter elements for a11y`
+
+#### 🔧 Key Implementation Details
+| Feature | ResolvedPostCard | ResolvedFilters |
+| :--- | :--- | :--- |
+| Visual state | `grayscale-[0.5] opacity-75 hover:grayscale-0 hover:opacity-100` | N/A |
+| Badges | "Resolved" + item type (lost/found) | Category pills (single-select) |
+| Date filter | N/A | Two date inputs (from/to) |
+| Categories | N/A | Electronics, Clothing, ID/Cards, Keys, Jewelry, Others, All |
