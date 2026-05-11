@@ -275,6 +275,15 @@ function App() {
   const [isUpdatingComment, setIsUpdatingComment] = useState(false);
   const [showAuthorContactModal, setShowAuthorContactModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showCommentReportModal, setShowCommentReportModal] = useState(false);
+  const [reportingComment, setReportingComment] = useState<ItemComment | null>(null);
+  const [commentReportReason, setCommentReportReason] = useState('');
+  const [isSubmittingCommentReport, setIsSubmittingCommentReport] = useState(false);
+  const [reportedCommentIds, setReportedCommentIds] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('reported_comment_ids');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+  const [commentReports, setCommentReports] = useState<any[]>([]);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -463,7 +472,7 @@ function App() {
   const [myPostsFilter, setMyPostsFilter] = useState<'all' | 'lost' | 'found' | 'resolved' | 'archived'>('all');
   const [adminFilter, setAdminFilter] = useState<'all' | 'active' | 'resolved' | 'archived'>('all');
   const [reports, setReports] = useState<any[]>([]);
-  const [adminTab, setAdminTab] = useState<'posts' | 'reports' | 'users'>('posts');
+  const [adminTab, setAdminTab] = useState<'posts' | 'reports' | 'comment-reports' | 'users'>('posts');
   const [reportFilter, setReportFilter] = useState<'all' | 'pending' | 'resolved'>('pending');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -503,39 +512,76 @@ function App() {
     }
   };
 
-  // Fetch reports for admin
-  useEffect(() => {
-    if (userRole !== 'admin') return;
-    const fetchReports = async () => {
-      const { data, error } = await supabase
-        .from('reports')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) setReports(data);
-    };
-    fetchReports();
+  // Fetch comment reports for admin
+  const fetchCommentReports = async () => {
+    if (userRole !== 'admin' && userRole !== 'super_admin') return;
+    const { data, error } = await supabase
+      .from('comment_reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) setCommentReports(data);
+    else if (error) console.error('fetchCommentReports error:', error);
+  };
 
-    const channel = supabase
-      .channel('realtime_reports')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, (payload: any) => {
-        const report = payload.new;
-        setReports(prev => [report, ...prev]);
-        sonnerToast.warning(`New report from ${report.reporter_name}`, {
-          description: `"${report.item_title}" — ${report.reason}`,
-          action: {
-            label: 'View',
-            onClick: () => {
-              setAdminTab('reports');
-              setCurrentView('admin');
-              navigate('/admin');
-            }
-          }
-        });
-        addNotification('report', `${report.reporter_name} reported "${report.item_title}": ${report.reason}`);
+  useEffect(() => {
+    if (userRole !== 'admin' && userRole !== 'super_admin') return;
+    fetchCommentReports();
+
+    const commentReportsChannel = supabase
+      .channel('admin_comment_reports')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comment_reports' }, async () => {
+        await fetchCommentReports();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(commentReportsChannel); };
+  }, [userRole]);
+
+  // Fetch reports for admin — always re-fetch fresh from DB
+  const fetchReports = async () => {
+    if (userRole !== 'admin' && userRole !== 'super_admin') return;
+    const { data, error } = await supabase
+      .from('reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) {
+      setReports(data);
+    } else if (error) {
+      console.error('fetchReports error:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (userRole !== 'admin' && userRole !== 'super_admin') return;
+
+    fetchReports();
+
+    const reportsChannel = supabase
+      .channel(`admin_reports_${userRole}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, async (payload: any) => {
+        // Always re-fetch from DB on any change to ensure consistency
+        await fetchReports();
+
+        // Only show toast for new reports
+        if (payload.eventType === 'INSERT') {
+          const report = payload.new;
+          sonnerToast.warning(`New report from ${report.reporter_name}`, {
+            description: `"${report.item_title}" — ${report.reason}`,
+            action: {
+              label: 'View',
+              onClick: () => {
+                setAdminTab('reports');
+                setCurrentView('admin');
+                navigate('/admin');
+              }
+            }
+          });
+          addNotification('report', `${report.reporter_name} reported "${report.item_title}": ${report.reason}`);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(reportsChannel); };
   }, [userRole, navigate]);
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -1219,6 +1265,49 @@ function App() {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Realtime listener — updates role instantly when super admin changes it
+  useEffect(() => {
+    if (!user) return;
+
+    const roleChannel = supabase
+      .channel('realtime_user_role')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${user.id}`
+        },
+        (payload: any) => {
+          const newRole = payload.new.role as 'user' | 'admin' | 'super_admin';
+          if (newRole && newRole !== userRole) {
+            setUserRole(newRole);
+            if (newRole === 'super_admin') {
+              sonnerToast.success('You have been promoted to Super Admin!');
+            } else if (newRole === 'admin') {
+              sonnerToast.success('You have been promoted to Admin!');
+            } else if (newRole === 'user') {
+              sonnerToast.info('Your role has been updated to User.');
+              setCurrentView('home');
+              navigate('/');
+            }
+
+            // If disabled, log them out
+            if (payload.new.is_disabled) {
+              sonnerToast.error('Your account has been disabled.');
+              setTimeout(() => logout(), 2000);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(roleChannel);
+    };
+  }, [user, userRole, navigate]);
 
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -1973,6 +2062,17 @@ function App() {
                             </span>
                           )}
                         </button>
+                        <button
+                          onClick={() => { setAdminTab('comment-reports'); fetchCommentReports(); }}
+                          className={cn('flex-1 px-6 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2', adminTab === 'comment-reports' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
+                        >
+                          Comments
+                          {commentReports.filter(r => !r.is_resolved).length > 0 && (
+                            <span className={cn('text-[10px] font-black px-1.5 py-0.5 rounded-full', adminTab === 'comment-reports' ? 'bg-red-100 text-red-600' : 'bg-red-500 text-white')}>
+                              {commentReports.filter(r => !r.is_resolved).length}
+                            </span>
+                          )}
+                        </button>
                         {userRole === 'super_admin' && (
                           <button
                             onClick={() => { setAdminTab('users'); fetchAllUsers(); }}
@@ -2012,6 +2112,15 @@ function App() {
                     {adminTab === 'reports' && (
                       <div className="space-y-4">
                         {/* Filter tabs for reports */}
+                        <div className="flex items-center justify-between">
+                        <button
+                          onClick={fetchReports}
+                          className="text-xs font-bold text-slate-500 hover:text-blue-600 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl transition-colors"
+                        >
+                          <Loader2 className="w-3 h-3" />
+                          Refresh
+                        </button>
+                        </div>
                         <div className="flex gap-2">
                           {(['all', 'pending', 'resolved'] as const).map(tab => (
                             <button
@@ -2057,7 +2166,12 @@ function App() {
                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight whitespace-nowrap">{formatDate(report.created_at)}</span>
                               </div>
                               <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                                <p className="text-xs text-slate-500">Reported by <span className="font-bold text-slate-700">{report.reporter_name}</span></p>
+                                <div className="space-y-1">
+                                  <p className="text-xs text-slate-500">Reported by <span className="font-bold text-slate-700">{report.reporter_name}</span></p>
+                                  {report.is_resolved && report.resolved_by && (
+                                    <p className="text-xs text-emerald-600">Resolved by <span className="font-bold">{report.resolved_by}</span>{report.resolved_at ? ` • ${formatDate(report.resolved_at)}` : ''}</p>
+                                  )}
+                                </div>
                                 <div className="flex gap-2">
                                   <button
                                     onClick={() => {
@@ -2085,15 +2199,90 @@ function App() {
                                   ) : (
                                     <button
                                       onClick={async () => {
-                                        const { error } = await supabase.from('reports').update({ is_resolved: false }).eq('id', report.id);
+                                        const { error } = await supabase.from('reports').update({ is_resolved: false, resolved_by: null, resolved_at: null }).eq('id', report.id);
                                         if (!error) {
-                                          setReports(prev => prev.map(r => r.id === report.id ? { ...r, is_resolved: false } : r));
+                                          setReports(prev => prev.map(r => r.id === report.id ? { ...r, is_resolved: false, resolved_by: null, resolved_at: null } : r));
                                           sonnerToast.info('Report reopened.');
                                         }
                                       }}
                                       className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl transition-colors border border-slate-200"
                                     >
                                       Reopen
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    {/* Comment Reports Tab */}
+                    {adminTab === 'comment-reports' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-slate-500">Reported comments from users. Review and delete if necessary.</p>
+                          <button onClick={fetchCommentReports} className="text-xs font-bold text-slate-500 hover:text-blue-600 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl transition-colors">
+                            <Loader2 className="w-3 h-3" />
+                            Refresh
+                          </button>
+                        </div>
+                        {commentReports.length === 0 ? (
+                          <div className="py-20 text-center bg-white rounded-3xl border border-slate-100">
+                            <MessageSquare className="w-8 h-8 text-slate-200 mx-auto mb-3" />
+                            <p className="text-slate-400 font-medium">No comment reports yet.</p>
+                          </div>
+                        ) : (
+                          commentReports.map(cr => (
+                            <div key={cr.id} className={cn("bg-white rounded-2xl border p-5 shadow-sm space-y-3", cr.is_resolved ? "border-emerald-100 opacity-60" : "border-slate-100")}>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide">On post: {cr.item_title}</p>
+                                    {cr.is_resolved && <span className="text-[9px] font-black px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full uppercase flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5" /> Resolved</span>}
+                                  </div>
+                                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                    <p className="text-xs text-slate-700 italic">"{cr.comment_content}"</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">— {cr.comment_author}</p>
+                                  </div>
+                                  <p className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-full inline-block">{cr.reason}</p>
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight whitespace-nowrap">{formatDate(cr.created_at)}</span>
+                              </div>
+                              <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+                                <div className="space-y-0.5">
+                                  <p className="text-xs text-slate-500">Reported by <span className="font-bold text-slate-700">{cr.reporter_name}</span></p>
+                                  {cr.is_resolved && cr.resolved_by && (
+                                    <p className="text-xs text-emerald-600">Resolved by <span className="font-bold">{cr.resolved_by}</span></p>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  {!cr.is_resolved && (
+                                    <button
+                                      onClick={async () => {
+                                        await handleDeleteComment(cr.comment_id);
+                                        const resolvedBy = user.user_metadata.full_name || user.email;
+                                        await supabase.from('comment_reports').update({ is_resolved: true, resolved_by: resolvedBy }).eq('id', cr.id);
+                                        await fetchCommentReports();
+                                        sonnerToast.success('Comment deleted and report resolved.');
+                                      }}
+                                      className="text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-xl transition-colors border border-red-200"
+                                    >
+                                      Delete Comment
+                                    </button>
+                                  )}
+                                  {!cr.is_resolved && (
+                                    <button
+                                      onClick={async () => {
+                                        const resolvedBy = user.user_metadata.full_name || user.email;
+                                        await supabase.from('comment_reports').update({ is_resolved: true, resolved_by: resolvedBy }).eq('id', cr.id);
+                                        await fetchCommentReports();
+                                        sonnerToast.success('Report dismissed.');
+                                      }}
+                                      className="text-xs font-bold text-slate-600 hover:text-slate-800 bg-slate-50 px-3 py-1.5 rounded-xl transition-colors border border-slate-200"
+                                    >
+                                      Dismiss
                                     </button>
                                   )}
                                 </div>
@@ -2589,6 +2778,92 @@ function App() {
               >
                 Confirm
               </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Comment Report Modal */}
+    <AnimatePresence>
+      {showCommentReportModal && reportingComment && (
+        <div className="fixed inset-0 z-[2147483647] flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCommentReportModal(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative bg-white w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-100">
+            <div className="p-8 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center text-red-600">
+                  <Flag className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Report Comment</h3>
+                  <p className="text-xs text-slate-500">Help us keep conversations respectful</p>
+                </div>
+              </div>
+
+              {/* Show the comment being reported */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-xs text-slate-600 italic">"{reportingComment.content}"</p>
+                <p className="text-[10px] text-slate-400 mt-1 font-bold">— {reportingComment.author_name}</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Reason</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Spam', 'Harassment', 'Inappropriate language', 'Misinformation', 'Off-topic', 'Other'].map(reason => (
+                    <button
+                      key={reason}
+                      onClick={() => setCommentReportReason(reason)}
+                      className={cn('px-3 py-2 rounded-xl text-xs font-bold border transition-all text-left', commentReportReason === reason ? 'bg-red-500 text-white border-red-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-red-50 hover:border-red-200')}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  placeholder="Add more details (optional)..."
+                  onChange={(e) => setCommentReportReason(e.target.value)}
+                  className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none focus:ring-2 focus:ring-red-400 min-h-[60px] resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setShowCommentReportModal(false)} className="flex-1 py-3 rounded-2xl">Cancel</Button>
+                <Button
+                  disabled={!commentReportReason.trim() || isSubmittingCommentReport}
+                  onClick={async () => {
+                    if (!commentReportReason.trim() || isSubmittingCommentReport) return;
+                    setIsSubmittingCommentReport(true);
+                    try {
+                      await supabase.from('comment_reports').insert({
+                        comment_id: reportingComment.id,
+                        comment_content: reportingComment.content,
+                        comment_author: reportingComment.author_name,
+                        comment_author_uid: reportingComment.author_uid,
+                        item_id: selectedItem?.id,
+                        item_title: selectedItem?.title,
+                        reporter_uid: user.id,
+                        reporter_name: user.user_metadata.full_name || user.email,
+                        reason: commentReportReason.trim(),
+                        created_at: new Date().toISOString(),
+                      });
+                      const newReported = new Set(reportedCommentIds).add(reportingComment.id);
+                      setReportedCommentIds(newReported);
+                      localStorage.setItem('reported_comment_ids', JSON.stringify([...newReported]));
+                      sonnerToast.success('Comment reported.', { description: 'Our admin team will review it shortly.' });
+                    } catch (err) {
+                      console.error('Comment report error:', err);
+                      sonnerToast.error('Failed to submit report.');
+                    } finally {
+                      setIsSubmittingCommentReport(false);
+                      setShowCommentReportModal(false);
+                    }
+                  }}
+                  className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white"
+                >
+                  {isSubmittingCommentReport ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Report'}
+                </Button>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -3273,7 +3548,7 @@ function App() {
                       <Flag className="w-4 h-4" />
                       {reportedItemIds.has(selectedItem.id) ? 'Reported' : 'Report'}
                     </Button>
-                    {(selectedItem.author_uid === user?.id || userRole === 'admin') && selectedItem.status === 'active' && (
+                    {(selectedItem.author_uid === user?.id || userRole === 'admin' || userRole === 'super_admin') && selectedItem.status === 'active' && (
                       <Button 
                         onClick={() => resolveItem(selectedItem.id)}
                         className="rounded-2xl py-3 text-sm bg-blue-700 text-blue-950 hover:bg-blue-600"
@@ -3303,7 +3578,7 @@ function App() {
                         Edit Post
                       </Button>
                     )}
-                    {userRole === 'admin' && selectedItem.status !== 'archived' && (
+                    {(userRole === 'admin' || userRole === 'super_admin') && selectedItem.status !== 'archived' && (
                       <Button 
                         variant="ghost"
                         onClick={() => {
@@ -3320,7 +3595,7 @@ function App() {
                         Admin: Archive Post
                       </Button>
                     )}
-                    {userRole === 'admin' && selectedItem.status === 'archived' && (
+                    {(userRole === 'admin' || userRole === 'super_admin') && selectedItem.status === 'archived' && (
                       <Button 
                         variant="ghost"
                         onClick={() => {
@@ -3453,17 +3728,14 @@ function App() {
                                   ) : (
                                     <>
                                       <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
-                                      <div className="flex justify-start gap-4 mt-3 pt-2.5 border-t border-slate-200/40">
+                                      <div className="flex justify-start items-center gap-3 mt-3 pt-2.5 border-t border-slate-200/40">
+                                        {/* Reply button — only on root comments */}
                                         {!isReply && user && selectedItem.status !== 'archived' && (
                                           <button 
                                             onClick={() => {
                                               setReplyToId(comment.id);
-                                              // Focus back on the input
                                               const input = document.querySelector('input[aria-label="Add a comment"]') as HTMLInputElement;
-                                              if (input) {
-                                                input.focus();
-                                                input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                              }
+                                              if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
                                             }}
                                             className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 hover:text-blue-600 transition-colors"
                                           >
@@ -3471,53 +3743,84 @@ function App() {
                                             Reply
                                           </button>
                                         )}
-                                        {user && comment.author_uid === user.id && selectedItem.status !== 'archived' && (
-                                          <div className="relative">
-                                            <button 
+
+                                        {/* Triple dot dropdown — for all other actions */}
+                                        {user && (
+                                          <div className="relative ml-auto">
+                                            <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setActiveCommentMenuId(activeCommentMenuId === comment.id ? null : comment.id);
                                               }}
-                                              className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 transition-colors p-1 hover:bg-slate-200/50 rounded-lg"
+                                              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                                               aria-label="More actions"
                                             >
                                               <MoreVertical className="w-3.5 h-3.5" />
                                             </button>
-                                            
+
                                             <AnimatePresence>
                                               {activeCommentMenuId === comment.id && (
                                                 <>
-                                                  <div 
-                                                    className="fixed inset-0 z-[100]" 
-                                                    onClick={() => setActiveCommentMenuId(null)}
-                                                  />
-                                                  <motion.div 
+                                                  <div className="fixed inset-0 z-[100]" onClick={() => setActiveCommentMenuId(null)} />
+                                                  <motion.div
                                                     initial={{ opacity: 0, scale: 0.95, y: -10 }}
                                                     animate={{ opacity: 1, scale: 1, y: 0 }}
                                                     exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                                                    className="absolute left-0 bottom-full mb-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-[101] overflow-hidden min-w-[110px]"
+                                                    className="absolute right-0 bottom-full mb-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-[101] overflow-hidden min-w-[130px]"
                                                   >
-                                                    <button 
-                                                      onClick={() => {
-                                                        setEditingCommentId(comment.id);
-                                                        setEditingCommentText(comment.content);
-                                                        setActiveCommentMenuId(null);
-                                                      }}
-                                                      className="flex items-center gap-2.5 w-full px-4 py-3 text-[10px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-50"
-                                                    >
-                                                      <Edit2 className="w-3.5 h-3.5" />
-                                                      Edit
-                                                    </button>
-                                                    <button 
-                                                      onClick={() => {
-                                                        handleDeleteComment(comment.id);
-                                                        setActiveCommentMenuId(null);
-                                                      }}
-                                                      className="flex items-center gap-2.5 w-full px-4 py-3 text-[10px] font-bold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                                    >
-                                                      <Trash2 className="w-3.5 h-3.5" />
-                                                      Delete
-                                                    </button>
+                                                    {/* Edit — only own comments */}
+                                                    {comment.author_uid === user.id && selectedItem.status !== 'archived' && (
+                                                      <button
+                                                        onClick={() => {
+                                                          setEditingCommentId(comment.id);
+                                                          setEditingCommentText(comment.content);
+                                                          setActiveCommentMenuId(null);
+                                                        }}
+                                                        className="flex items-center gap-2.5 w-full px-4 py-3 text-[10px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-100"
+                                                      >
+                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                        Edit
+                                                      </button>
+                                                    )}
+
+                                                    {/* Delete — own comment or admin */}
+                                                    {(comment.author_uid === user.id || userRole === 'admin' || userRole === 'super_admin') && (
+                                                      <button
+                                                        onClick={() => {
+                                                          handleDeleteComment(comment.id);
+                                                          setActiveCommentMenuId(null);
+                                                        }}
+                                                        className="flex items-center gap-2.5 w-full px-4 py-3 text-[10px] font-bold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors border-b border-slate-100"
+                                                      >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Delete
+                                                      </button>
+                                                    )}
+
+                                                    {/* Report — only other users' comments */}
+                                                    {comment.author_uid !== user.id && (
+                                                      <button
+                                                        onClick={() => {
+                                                          setActiveCommentMenuId(null);
+                                                          if (reportedCommentIds.has(comment.id)) {
+                                                            sonnerToast.info('You have already reported this comment.');
+                                                            return;
+                                                          }
+                                                          setReportingComment(comment);
+                                                          setCommentReportReason('');
+                                                          setShowCommentReportModal(true);
+                                                        }}
+                                                        className={cn(
+                                                          "flex items-center gap-2.5 w-full px-4 py-3 text-[10px] font-bold transition-colors",
+                                                          reportedCommentIds.has(comment.id)
+                                                            ? "text-slate-300 cursor-not-allowed"
+                                                            : "text-slate-600 hover:bg-red-50 hover:text-red-600"
+                                                        )}
+                                                      >
+                                                        <Flag className="w-3.5 h-3.5" />
+                                                        {reportedCommentIds.has(comment.id) ? 'Already Reported' : 'Report'}
+                                                      </button>
+                                                    )}
                                                   </motion.div>
                                                 </>
                                               )}
