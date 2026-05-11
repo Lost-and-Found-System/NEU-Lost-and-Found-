@@ -2165,12 +2165,7 @@ function App() {
                                 </div>
                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight whitespace-nowrap">{formatDate(report.created_at)}</span>
                               </div>
-                              <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                                <div className="space-y-1">
-                                  <p className="text-xs text-slate-500">Reported by <span className="font-bold text-slate-700">{report.reporter_name}</span></p>
-                                  {report.is_resolved && report.resolved_by && (
-                                    <p className="text-xs text-emerald-600">Resolved by <span className="font-bold">{report.resolved_by}</span>{report.resolved_at ? ` • ${formatDate(report.resolved_at)}` : ''}</p>
-                                  )}
+                              
                                 </div>
                                 <div className="flex gap-2">
                                   <button
