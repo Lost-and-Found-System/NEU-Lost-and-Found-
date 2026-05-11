@@ -1,13 +1,13 @@
 # Test Execution Report – Comment System & Reply Nesting
 
-**Test cases for posting root comments, nested replies (1-level), editing own comments, deleting comments, and admin moderation controls. Edge cases include empty body and XSS-like input.**
+**Test cases for posting root comments, nested replies (1-level), editing own comments, deleting comments, edge cases, and admin moderation controls.**
 
 ---
 
 ## Summary
 | Total Tests | Passed | Failed | Blocked | Skipped |
 |-------------|--------|--------|---------|---------|
-| 16          | 13     | 0      | 0       | 0       |
+| 18          | 17     | 0      | 0       | 0       |
 
 ---
 
@@ -49,15 +49,17 @@
 
 | TC ID | Description | Expected Result | Status |
 |-------|-------------|-----------------|--------|
-| TC-13 | Admin deletes inappropriate comment (any user) | Admin can delete any comment; comment removed with moderation log entry |  |
-| TC-14 | Admin hides comment (soft delete) | Comment hidden from public view but retained for review |  |
-| TC-15 | Admin approves flagged comment | Flagged comment becomes visible after admin approval |  |
+| TC-13 | User reports a comment or reply | Report is submitted successfully; comment/reply is flagged in the system | ✅ |
+| TC-14 | Admin views list of reported comments/replies | Admin can see all reported comments/replies with reporter info, reason, and timestamp | ✅ |
+| TC-15 | Admin dismisses a report | Report is marked as resolved/dismissed; comment/reply remains unchanged and visible | ✅ |
+| TC-16 | Admin deletes a reported comment/reply | Comment is permanently deleted; report is marked as resolved; deletion logged |  |
+| TC-17 | Admin deletes a reply | Reply is permanently deleted | ✅ |
 
 ### Edge Cases
 
 | TC ID | Description | Expected Result | Status |
 |-------|-------------|-----------------|--------|
-| TC-16 | Very long comment (2000+ characters) | Comment posts successfully | ✅ |
+| TC-18 | Very long comment (2000+ characters) | Comment posts successfully | ✅ |
 
 ---
 
