@@ -1,6 +1,6 @@
 ## Sprint 3 — Polish, Documentation & Deployment
 
-### PR #049: Intro.js Onboarding Tour (6-Step Guided Walkthrough)
+### PR #01: Intro.js Onboarding Tour (6-Step Guided Walkthrough)
 
 #### 📝 Description
 Integrates `intro.js` v8 to implement a 6-step guided onboarding tour for first-time users.
