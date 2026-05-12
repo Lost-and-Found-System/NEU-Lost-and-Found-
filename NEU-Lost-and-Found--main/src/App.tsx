@@ -847,7 +847,7 @@ function App() {
         const localComments = JSON.parse(localStorage.getItem(`comments_${itemId}`) || '[]');
         setComments(localComments);
       } else {
-        // Remote is the source of truth — never merge stale local data on top
+        // Remote is always the source of truth — never merge stale localStorage on top
         const remoteComments = (data as ItemComment[]).sort((a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
@@ -1003,7 +1003,7 @@ function App() {
 
   const handleDeleteComment = async (commentId: string, fromAdmin = false) => {
     if (!user) return;
-    
+
     if (!fromAdmin && selectedItem && selectedItem.status === 'archived') return;
 
     const idsToRemove = new Set([commentId, ...comments.filter(c => c.parent_id === commentId).map(c => c.id)]);
@@ -2259,6 +2259,7 @@ function App() {
                                   {!cr.is_resolved && (
                                     <button
                                       onClick={async () => {
+                                        // Delete the comment directly from Supabase
                                         const { error: delError } = await supabase
                                           .from('comments')
                                           .delete()
@@ -2269,16 +2270,19 @@ function App() {
                                           return;
                                         }
 
-                                        // Purge from localStorage using item_id from the report record
+                                        // Purge this comment (and any replies) from localStorage
+                                        // using item_id from the report so we always hit the right cache key
                                         if (cr.item_id) {
                                           const cacheKey = `comments_${cr.item_id}`;
                                           const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
                                           localStorage.setItem(cacheKey, JSON.stringify(
                                             cached.filter((c: ItemComment) => c.id !== cr.comment_id && c.parent_id !== cr.comment_id)
                                           ));
+                                          // Re-fetch from DB so the admin's live view is immediately correct
+                                          await fetchComments(cr.item_id);
                                         }
 
-                                        // If this post is currently open, update live state too
+                                        // If admin currently has this post open, remove from live state too
                                         if (selectedItem?.id === cr.item_id) {
                                           setComments(prev => prev.filter(
                                             c => c.id !== cr.comment_id && c.parent_id !== cr.comment_id
