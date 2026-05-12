@@ -17,7 +17,6 @@ Access is restricted to **@neu.edu.ph** Google accounts only.
 ### Posts
 - Post lost or found items with title, description, category, location, date, and photos/videos
 - Upload up to 5 photos or videos per post
-- AI-powered auto-fill for found items using Google Gemini
 - Anonymous posting option (identity hidden, contact info still optionally available)
 - Edit post details after publishing
 - Mark posts as resolved when item is returned
