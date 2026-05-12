@@ -2276,7 +2276,35 @@ function App() {
                                   {!cr.is_resolved && (
                                     <button
                                       onClick={async () => {
-                                        await handleDeleteComment(cr.comment_id, true);
+                                        // Delete the comment from Supabase
+                                        const { error: delError } = await supabase
+                                          .from('comments')
+                                          .delete()
+                                          .eq('id', cr.comment_id);
+
+                                        if (delError) {
+                                          sonnerToast.error('Failed to delete comment: ' + delError.message);
+                                          return;
+                                        }
+
+                                        // Nuke the localStorage cache for the post this comment belongs to
+                                        // so it never resurfaces when anyone opens that post
+                                        if (cr.item_id) {
+                                          const cacheKey = `comments_${cr.item_id}`;
+                                          const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+                                          const cleaned = cached.filter(
+                                            (c: ItemComment) => c.id !== cr.comment_id && c.parent_id !== cr.comment_id
+                                          );
+                                          localStorage.setItem(cacheKey, JSON.stringify(cleaned));
+                                        }
+
+                                        // If the admin currently has this post open, remove it from live state too
+                                        if (selectedItem?.id === cr.item_id) {
+                                          setComments(prev => prev.filter(
+                                            c => c.id !== cr.comment_id && c.parent_id !== cr.comment_id
+                                          ));
+                                        }
+
                                         const resolvedBy = user.user_metadata.full_name || user.email;
                                         await supabase.from('comment_reports').update({ is_resolved: true, resolved_by: resolvedBy }).eq('id', cr.id);
                                         await fetchCommentReports();
