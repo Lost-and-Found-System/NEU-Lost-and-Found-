@@ -1007,25 +1007,30 @@ function App() {
     // If called from post modal, block deletion on archived posts (unless admin)
     if (!fromAdmin && selectedItem && selectedItem.status === 'archived') return;
 
-    // Optimistic delete from current comments view
+    // Optimistic delete — remove the comment and all its replies from the current view
     const previousComments = [...comments];
-    setComments(prev => prev.filter(c => c.id !== commentId));
+    setComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
 
     try {
-      const { error } = await supabase
+      const { data: deleted, error } = await supabase
         .from('comments')
         .delete()
-        .eq('id', commentId);
+        .eq('id', commentId)
+        .select('id');
 
       if (error) {
         setComments(previousComments);
         console.error('Delete comment error:', error);
         showToast('Failed to delete comment: ' + error.message, 'error');
+      } else if (!deleted || deleted.length === 0) {
+        // RLS silently blocked the delete — roll back the optimistic update
+        setComments(previousComments);
+        showToast('You do not have permission to delete this comment.', 'error');
       } else {
         showToast('Comment deleted', 'success');
         if (selectedItem) {
           localStorage.setItem(`comments_${selectedItem.id}`, JSON.stringify(
-            previousComments.filter(c => c.id !== commentId)
+            previousComments.filter(c => c.id !== commentId && c.parent_id !== commentId)
           ));
         }
       }
