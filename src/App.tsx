@@ -1001,10 +1001,13 @@ function App() {
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!user || !selectedItem || selectedItem.status === 'archived') return;
+  const handleDeleteComment = async (commentId: string, fromAdmin = false) => {
+    if (!user) return;
+    
+    // If called from post modal, block deletion on archived posts (unless admin)
+    if (!fromAdmin && selectedItem && selectedItem.status === 'archived') return;
 
-    // Optimistic delete
+    // Optimistic delete from current comments view
     const previousComments = [...comments];
     setComments(prev => prev.filter(c => c.id !== commentId));
 
@@ -1016,18 +1019,10 @@ function App() {
 
       if (error) {
         setComments(previousComments);
-        const isPermissionError = error.message.toLowerCase().includes("security policy") ||
-                                 error.message.toLowerCase().includes("not found") ||
-                                 error.message.toLowerCase().includes("permission denied");
-
-        if (isPermissionError) {
-          showToast('Cannot delete comments on archived posts', 'error');
-        } else {
-          showToast('Failed to delete comment', 'error');
-        }
+        console.error('Delete comment error:', error);
+        showToast('Failed to delete comment: ' + error.message, 'error');
       } else {
         showToast('Comment deleted', 'success');
-        // Update local storage
         if (selectedItem) {
           localStorage.setItem(`comments_${selectedItem.id}`, JSON.stringify(
             previousComments.filter(c => c.id !== commentId)
@@ -2261,7 +2256,7 @@ function App() {
                                   {!cr.is_resolved && (
                                     <button
                                       onClick={async () => {
-                                        await handleDeleteComment(cr.comment_id);
+                                        await handleDeleteComment(cr.comment_id, true);
                                         const resolvedBy = user.user_metadata.full_name || user.email;
                                         await supabase.from('comment_reports').update({ is_resolved: true, resolved_by: resolvedBy }).eq('id', cr.id);
                                         await fetchCommentReports();
