@@ -2,6 +2,7 @@
 
 ## Entry 1
 **Date:** April 8, 2026
+
 **Task:** Define KM Problem for NEU Found Hub
 
 **Prompt to AI:**
@@ -22,6 +23,7 @@
 
 ## Entry 2
 **Date:** April 9, 2026
+
 **Task:** Selecting Appropriate KM Framework
 
 **Prompt to AI:**
@@ -44,6 +46,7 @@
 
 ## Entry 3
 **Date:** April 9, 2026
+
 **Task:** Define Taxonomy Categories
 
 **Prompt to AI:**
@@ -64,6 +67,7 @@
 
 ## Entry 4
 **Date:** April 15, 2026
+
 **Task:** Establish Initial Data Schema
 
 **Prompt to AI:**
@@ -89,6 +93,7 @@
 
 ## Entry 5
 **Date:** April 16, 2026
+
 **Task:** Define Retrieval Requirements
 
 **Prompt to AI:**
