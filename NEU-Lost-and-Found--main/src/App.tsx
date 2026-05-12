@@ -458,7 +458,22 @@ function App() {
             setComments(prev => prev.map(c => c.id === updatedComment.id ? updatedComment : c));
           } else if (payload.eventType === 'DELETE') {
             const deletedCommentId = payload.old.id;
-            setComments(prev => prev.filter(c => c.id !== deletedCommentId));
+            // Remove the deleted comment AND any replies to it from state
+            setComments(prev => {
+              const idsToRemove = new Set([deletedCommentId, ...prev.filter(c => c.parent_id === deletedCommentId).map(c => c.id)]);
+              const next = prev.filter(c => !idsToRemove.has(c.id));
+              // Purge from all localStorage comment caches
+              Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('comments_')) {
+                  const cached = JSON.parse(localStorage.getItem(key) || '[]');
+                  const filtered = cached.filter((c: ItemComment) => !idsToRemove.has(c.id));
+                  if (filtered.length !== cached.length) {
+                    localStorage.setItem(key, JSON.stringify(filtered));
+                  }
+                }
+              });
+              return next;
+            });
           }
         }
       )
@@ -825,34 +840,23 @@ function App() {
         .select('*')
         .eq('item_id', itemId)
         .order('created_at', { ascending: true });
-      
-      const localCommentsJSON = localStorage.getItem(`comments_${itemId}`);
-      const localComments = localCommentsJSON ? JSON.parse(localCommentsJSON) : [];
 
       if (error) {
         // Only log real errors, not RLS/table missing for demo
         if (!error.message.includes("Could not find the table") && !error.message.includes("violates row-level security policy")) {
           console.error("Error fetching comments from Supabase:", error);
         }
+        // Fall back to local cache only when Supabase is unreachable
+        const localComments = JSON.parse(localStorage.getItem(`comments_${itemId}`) || '[]');
         setComments(localComments);
       } else {
-        const remoteComments = data as ItemComment[];
-        
-        // Merge remote and local comments by ID to prevent duplicates and preserve locally saved comments
-        const combined = [...remoteComments];
-        localComments.forEach((lc: ItemComment) => {
-          if (!combined.some(rc => rc.id === lc.id)) {
-            combined.push(lc);
-          }
-        });
-        
-        const sorted = combined.sort((a, b) => 
+        // Remote is the source of truth — never merge stale local data on top
+        const remoteComments = (data as ItemComment[]).sort((a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
-        
-        setComments(sorted);
-        // Sync local storage with both remote and local merged results
-        localStorage.setItem(`comments_${itemId}`, JSON.stringify(sorted));
+        setComments(remoteComments);
+        // Keep local cache in sync with what the DB actually has
+        localStorage.setItem(`comments_${itemId}`, JSON.stringify(remoteComments));
       }
     } catch (err) {
       console.error("Fetch comments error:", err);
@@ -1001,12 +1005,18 @@ function App() {
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!user || !selectedItem || selectedItem.status === 'archived') return;
+  const handleDeleteComment = async (commentId: string, fromAdmin = false) => {
+    if (!user) return;
+    
+    // If called from post modal, block deletion on archived posts (unless admin)
+    if (!fromAdmin && selectedItem && selectedItem.status === 'archived') return;
+
+    // Collect the IDs to remove: the comment itself + any replies to it
+    const idsToRemove = new Set([commentId, ...comments.filter(c => c.parent_id === commentId).map(c => c.id)]);
 
     // Optimistic delete
     const previousComments = [...comments];
-    setComments(prev => prev.filter(c => c.id !== commentId));
+    setComments(prev => prev.filter(c => !idsToRemove.has(c.id)));
 
     try {
       const { error } = await supabase
@@ -1016,23 +1026,28 @@ function App() {
 
       if (error) {
         setComments(previousComments);
-        const isPermissionError = error.message.toLowerCase().includes("security policy") ||
-                                 error.message.toLowerCase().includes("not found") ||
-                                 error.message.toLowerCase().includes("permission denied");
-
-        if (isPermissionError) {
-          showToast('Cannot delete comments on archived posts', 'error');
-        } else {
-          showToast('Failed to delete comment', 'error');
-        }
+        console.error('Delete comment error:', error);
+        showToast('Failed to delete comment: ' + error.message, 'error');
       } else {
         showToast('Comment deleted', 'success');
-        // Update local storage
+        // Purge from localStorage so it never resurfaces from cache
         if (selectedItem) {
-          localStorage.setItem(`comments_${selectedItem.id}`, JSON.stringify(
-            previousComments.filter(c => c.id !== commentId)
-          ));
+          const cached = JSON.parse(localStorage.getItem(`comments_${selectedItem.id}`) || '[]');
+          localStorage.setItem(
+            `comments_${selectedItem.id}`,
+            JSON.stringify(cached.filter((c: ItemComment) => !idsToRemove.has(c.id)))
+          );
         }
+        // Also purge from any other item caches that might hold this comment
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('comments_')) {
+            const cached = JSON.parse(localStorage.getItem(key) || '[]');
+            const filtered = cached.filter((c: ItemComment) => !idsToRemove.has(c.id));
+            if (filtered.length !== cached.length) {
+              localStorage.setItem(key, JSON.stringify(filtered));
+            }
+          }
+        });
       }
     } catch (err) {
       console.error("Delete comment error:", err);
@@ -2165,7 +2180,12 @@ function App() {
                                 </div>
                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight whitespace-nowrap">{formatDate(report.created_at)}</span>
                               </div>
-                              
+                              <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+                                <div className="space-y-1">
+                                  <p className="text-xs text-slate-500">Reported by <span className="font-bold text-slate-700">{report.reporter_name}</span></p>
+                                  {report.is_resolved && report.resolved_by && (
+                                    <p className="text-xs text-emerald-600">Resolved by <span className="font-bold">{report.resolved_by}</span>{report.resolved_at ? ` • ${formatDate(report.resolved_at)}` : ''}</p>
+                                  )}
                                 </div>
                                 <div className="flex gap-2">
                                   <button
@@ -2256,7 +2276,7 @@ function App() {
                                   {!cr.is_resolved && (
                                     <button
                                       onClick={async () => {
-                                        await handleDeleteComment(cr.comment_id);
+                                        await handleDeleteComment(cr.comment_id, true);
                                         const resolvedBy = user.user_metadata.full_name || user.email;
                                         await supabase.from('comment_reports').update({ is_resolved: true, resolved_by: resolvedBy }).eq('id', cr.id);
                                         await fetchCommentReports();
